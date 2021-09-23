@@ -1,0 +1,39 @@
+
+study:
+  name: 'LiverShapeEmbedding'
+
+
+data:
+  subsample: 30000
+  num_outputs: 3
+  shuffle: True
+
+  study_field: 'Study'
+  epoch_length: 5000
+
+solver:
+  latent_lr: 0.001
+  model_lr: 0.0005
+  weight_decay: 0.0001
+  epochs: 2000
+  num_workers: 4
+  batch_size: 6
+  latent_size: 256
+  code_bound: 1.0
+  code_std_dev: 1.0
+  code_reg_lambda: 0.0001
+  shuffle: True
+  clampingdistance: 0.1
+model:
+  dims : [ 512, 512, 512, 512, 512, 512, 512, 512 ]
+  dropout : [0, 1, 2, 3, 4, 5, 6, 7]
+  dropout_prob : 0.2
+  norm_layers : [0, 1, 2, 3, 4, 5, 6, 7]
+  latent_in : [4]
+  xyz_in_all : False
+  use_tanh : False
+  latent_dropout : False
+  weight_norm : True
+
+
+

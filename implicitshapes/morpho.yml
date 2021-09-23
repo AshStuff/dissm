@@ -1,0 +1,65 @@
+name: itk
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1
+  - bz2file=0.98
+  - ca-certificates=2020.6.20
+  - certifi=2016.9.26
+  - h5py=2.10.0
+  - hdf5=1.10.5
+  - libblas=3.8.0
+  - libcblas=3.8.0
+  - libedit=3.1.20191231
+  - libffi=3.3
+  - libgcc-ng=9.1.0
+  - libgfortran-ng=7.5.0
+  - liblapack=3.8.0
+  - libopenblas=0.3.10
+  - libstdcxx-ng=9.1.0
+  - linecache2=1.0.0
+  - ncurses=6.2
+  - nibabel=2.5.1
+  - pip=19.3.1
+  - pydicom=2.0.0
+  - python=2.7.18
+  - readline=8.0
+  - scipy=1.2.1
+  - setuptools=44.0.0
+  - six=1.15.0
+  - sqlite=3.32.3
+  - tk=8.6.10
+  - traceback2=1.4.0
+  - unittest2=1.1.0
+  - wheel=0.33.6
+  - zlib=1.2.11
+  - pip:
+    - backports-functools-lru-cache==1.6.1
+    - backports-shutil-get-terminal-size==1.0.0
+    - decorator==4.4.2
+    - enum34==1.1.10
+    - ipdb==0.13.3
+    - ipython==5.10.0
+    - ipython-genutils==0.2.0
+    - itk==5.0.1
+    - itk-core==5.0.1
+    - itk-filtering==5.0.1
+    - itk-io==5.0.1
+    - itk-morphologicalcontourinterpolation==1.0.0
+    - itk-numerics==5.0.1
+    - itk-registration==5.0.1
+    - itk-segmentation==5.0.1
+    - numpy==1.16.6
+    - pathlib2==2.3.5
+    - pexpect==4.8.0
+    - pickleshare==0.7.5
+    - prompt-toolkit==1.0.18
+    - ptyprocess==0.6.0
+    - pygments==2.5.2
+    - scandir==1.10.0
+    - simplegeneric==0.8.1
+    - traitlets==4.3.3
+    - wcwidth==0.2.5
+prefix: /home/adam/anaconda3/envs/itk
+

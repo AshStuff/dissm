@@ -1,0 +1,19 @@
+
+study:
+  name: 'PredictParams'
+
+
+data:
+  shuffle: True
+
+
+solver:
+  lr: 0.001 
+  weight_decay: 0.0001
+  epochs: 2000
+  num_workers: 4
+  batch_size: 2
+model:
+
+
+
