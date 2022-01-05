@@ -51,7 +51,7 @@ convert.align_large_meshes(simplified_mesh_folder, super_simplified_registered_f
 ## SDF Sampling
 
 All the above steps were all to construct and align nice meshes. With these nice meshes constructed, we can now finally sample the SDFs. As the DeepSDF paper explains, it is advantageous to densely sample closer to the boundary of the shape, while still having a proportion of samples uniformly sampled. I have found that the DeepSDF parameters don't work that well for modelling the liver shape. Instead, I found that sampling a higher proportion as uniformly sampled and using a larger jitter magnitude to be better. The following function will conduct this operation. Note, meshes are scaled to fit within a unit sphere before being sampled, so their world coordinate scales are completely squashed.
-> **_NOTE:_** In order to use `jitter` and `uniform_proportion`, you need to use the `modified_mesh_to_sdf` package which is located in `APH_repos/modified_mesh_to_sdf`.
+> **_NOTE:_** In order to use `jitter` and `uniform_proportion`, you need to use the `modified_mesh_to_sdf` package which is located in `implicitshapes/modified_mesh_to_sdf`.
 
 
 
