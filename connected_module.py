@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from dlt.common.utils.setup import load_model_from_ckpt
+from implicitshapes.dlt_utils import load_model_from_ckpt
 from torch import nn
 
 from deep_sdf_decoder import create_decoder_model

@@ -9,7 +9,7 @@ import nibabel as nib
 import numpy as np
 import torch
 import torch.nn as nn
-from dlt.common.utils.setup import read_yaml, init_workspace
+from implicitshapes.dlt_utils import read_yaml, init_workspace
 from tensorboardX import SummaryWriter
 
 from connected_module import ConnectedModel

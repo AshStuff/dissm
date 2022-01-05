@@ -1,9 +1,58 @@
 from torch import nn
 import numpy as np
 import torch
-from dlt.common.utils.setup import load_model_from_ckpt
 from networks.encoder import WrapperResidualEncoder
 from networks.deep_sdf_decoder import create_decoder_model
+
+
+# adapted from
+# https://github.com/KaiyangZhou/deep-person-reid/blob/master/torchreid/utils/torchtools.py
+# should be able to load a state dict that was wrapped with DataParallel. Should also be
+# able to load into a wrapped DataParallel model
+def load_model_from_ckpt(model, ckpt_path, partial=False, partial_ckpt=False):
+    """
+    When partial = True, the specified model is allowed to have weights that are not
+    present in the saved ckpt. Thus it will only load the subset of weights within the
+    ckpt.
+    When partial_ckpt = True, this allows the reverse, i.e., the ckpt to have weights not
+    present in the specified model
+    """
+
+    loaded = torch.load(ckpt_path)
+    model_state_dict = loaded['component.model']
+
+    new_state_dict = OrderedDict()
+    # strip 'module.' from every key if applicable
+    for k,v in model_state_dict.items():
+        if k.startswith('module.'):
+            k = k[7:] # discard module prefix
+        new_state_dict[k] = v
+
+
+    if partial_ckpt:
+        new_state_dict = load_partial_ckpt(model, new_state_dict)
+
+    if not partial:
+        if isinstance(model, torch.nn.DataParallel):
+            model.module.load_state_dict(new_state_dict)
+        else:
+            model.load_state_dict(new_state_dict)
+    # if we are using partial loading
+    else:
+        if isinstance(model, torch.nn.DataParallel):
+            # get the specified model state dict
+            cur_model_dict = model.module.state_dict()
+            # update it with the loaded weights
+            cur_model_dict.update(new_state_dict)
+            # load it into the specified model
+            model.module.load_state_dict(cur_model_dict)
+        else:
+            cur_model_dict = model.state_dict()
+            cur_model_dict.update(new_state_dict)
+            model.load_state_dict(cur_model_dict)
+
+    return model
+
 
 class ConnectedModel(nn.Module):
     """

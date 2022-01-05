@@ -4,13 +4,10 @@ import math
 import argparse
 import torch
 
-from dlt.common.utils.setup import read_yaml, init_workspace
-from dlt.common.core import Context
-from dlt.common.transforms import MoveToCuda, PreIterTransform, Callable
-from dlt.common.monitors import TQDMConsoleLogger
-from dlt.common.metrics import OnlineAverageLoss
-from dlt.common.trainers import SupervisedTrainer
-from dlt.common.controllers import Checkpointer, OptimScheduler
+from dlt_utils import (read_yaml, init_workspace,
+                       Context, MoveToCuda, PreIterTransform, Callable,
+                       TQDMConsoleLogger, OnlineAverageLoss, SupervisedTrainer,
+                       Checkpointer, OptimScheduler)
 from dataset import SDFSamples
 from networks.deep_sdf_decoder import Decoder
 

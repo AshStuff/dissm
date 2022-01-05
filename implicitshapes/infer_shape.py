@@ -5,9 +5,9 @@ import trimesh
 import nibabel as ni
 import torch
 from sklearn.decomposition import PCA
-from dlt.common.utils.setup import load_model_from_ckpt, read_yaml
 from deep_sdf_decoder import create_decoder_model
 import SimpleITK as sitk
+from dlt_utils import read_yaml, load_model_from_ckpt
 
 def infer_from_latent(model_path, config_file, latent_vec, sdf_size=300, batch_size=50000, normalized=True, scale=None, trans=None):
 

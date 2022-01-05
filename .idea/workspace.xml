@@ -2,8 +2,13 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="c822ff39-309b-4326-a4ef-2639c2855c6a" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/implicitshapes/dlt_utils.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/implicitshapes/CONVERT.md" beforeDir="false" afterPath="$PROJECT_DIR$/implicitshapes/CONVERT.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/connected_module.py" beforeDir="false" afterPath="$PROJECT_DIR$/connected_module.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/implicitshapes/embed_shape.py" beforeDir="false" afterPath="$PROJECT_DIR$/implicitshapes/embed_shape.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/implicitshapes/infer_shape.py" beforeDir="false" afterPath="$PROJECT_DIR$/implicitshapes/infer_shape.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/implicitshapes/networks/connected_module.py" beforeDir="false" afterPath="$PROJECT_DIR$/implicitshapes/networks/connected_module.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/train_episodic.py" beforeDir="false" afterPath="$PROJECT_DIR$/train_episodic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -199,6 +204,17 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="1" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
