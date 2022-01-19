@@ -1,10 +1,9 @@
 # Training DeepSDF
 
-Training script uses the DLT, so you should be familiar with that library. And make sure to set its location to the `PYTHONPATH` before running
 
 ## Dataset
 
-Like all DLT datasets, the dataset is expected to be specified using the `json` format.
+To shape the train embedding model a `json` file is expected that follows this format: 
 
 ```json
 [

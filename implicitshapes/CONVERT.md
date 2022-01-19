@@ -1,11 +1,12 @@
 # Mask to SDF Processing Pipeline
 
-To create densely sampled SDFs, needed for DeepSDF, requires several steps. It can be broken down into several steps to make nice meshes, then aligning the meshes, then sampling the SDFs from the meshes.
+To create densely sampled SDFs, needed for DeepSDF, requires several steps. It can be broken down into several steps to make nice meshes, then aligning the meshes, then sampling the SDFs from the meshes. Probably best to create your own conda or virtual environment for all steps here:
 
 ## Interpolating Masks
 
-If you create a mesh directly from a mask, it will look very blocky and terrible due to the mask pixelation. Additionally, the large inter-slice gaps in the z direction can also cause serious quality problems. The first step is to interpolate the mask in between slices. We use the [itk.MorphologicalContourInterpolator](https://github.com/KitwareMedical/ITKMorphologicalContourInterpolation). Note, I have found it challenging to install this filter. What I have resorted to is to create a python 2.7 environment, downloading the library from github, and then manually installing it using:
+If you create a mesh directly from a mask, it will look very blocky and terrible due to the mask pixelation. Additionally, the large inter-slice gaps in the z direction can also cause serious quality problems. The first step is to interpolate the mask in between slices. We use the [itk.MorphologicalContourInterpolator](https://github.com/KitwareMedical/ITKMorphologicalContourInterpolation). Our script assumes the masks live in a folder all under the NiBabel `.nii.gz` format.
 ```python
+pip install itk
 python -m pip install --upgrade pip
 python -m pip install itk-morphologicalcontourinterpolation
 ```
@@ -51,7 +52,10 @@ convert.align_large_meshes(simplified_mesh_folder, super_simplified_registered_f
 ## SDF Sampling
 
 All the above steps were all to construct and align nice meshes. With these nice meshes constructed, we can now finally sample the SDFs. As the DeepSDF paper explains, it is advantageous to densely sample closer to the boundary of the shape, while still having a proportion of samples uniformly sampled. I have found that the DeepSDF parameters don't work that well for modelling the liver shape. Instead, I found that sampling a higher proportion as uniformly sampled and using a larger jitter magnitude to be better. The following function will conduct this operation. Note, meshes are scaled to fit within a unit sphere before being sampled, so their world coordinate scales are completely squashed.
-> **_NOTE:_** In order to use `jitter` and `uniform_proportion`, you need to use the `modified_mesh_to_sdf` package which is located in `implicitshapes/modified_mesh_to_sdf`.
+> **_NOTE:_** In order to use `jitter` and `uniform_proportion`, you need to use the `modified_mesh_to_sdf` package which is located in `implicitshapes/modified_mesh_to_sdf`. Navigate to that folder and install the mesh_to_sdf package:
+```python
+python setup.py install
+```
 
 
 

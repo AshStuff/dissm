@@ -4,16 +4,14 @@ Please find the paper at [DISM](https://arxiv.org/pdf/2104.02847.pdf)
 
 ### Pre-requisties
 
-Before diving into training, testing the shape model there are few pre-requisites that needs to be performed. 
+There are three main steps to using this system:
 
-Please follow the folder `implicitshapes`
-```
-    1. CONVERT.md
-    2. DEEPSDF.md
-    3. DIRECT_PREDICT.md
-    4. SDF_PREDICT.md
-```
-The above steps will allow you to train the deep shape model which is an input to the DISSM.
+1. Create a library of shapes from a set of masks. Please see [CONVERT.md](implicitshapes/CONVERT.md).
+
+2. Train a deep SDF auto-decoded model based off the library of shapes. Please see [DEEPSDF.md](implicitshapes/DEEPSDF.md).
+
+3. Now train an encoder to estimate an organ's shape given an image.
+
 
 ### Training DISM
 
