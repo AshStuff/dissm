@@ -4,7 +4,6 @@ from tqdm import tqdm
 from multiprocessing import Pool
 import trimesh
 from mesh_to_sdf import sample_sdf_near_surface, mesh_to_voxels, get_surface_point_cloud, mesh_to_sdf
-from mesh_to_sdf.utils import scale_to_unit_cube 
 import shutil
 import json
 import os
@@ -17,7 +16,7 @@ import SimpleITK as sitk
 from copy import deepcopy
 import pymesh
 from itk_utils import get_affine_from_itk, origin_adjust_from_pad
-from mesh_utils import scale_mesh, rigid_align_meshes
+from mesh_utils import scale_mesh, rigid_align_meshes, get_scale
 
 
 
@@ -192,6 +191,20 @@ def sample_sdf(in_folder, out_folder, number_of_points=500000, uniform_proportio
     os.makedirs(out_folder, exist_ok=True)
     # run the sampling asynchronously in parallel
     pool = Pool(12)
+
+
+    # get a rough scale for use later in estimation
+    first_path = paths[0]
+    first_mesh = trimesh.load(first_path)
+    rough_scale = get_scale(first_mesh)
+    print('Rough scale is ', rough_scale) 
+    txt_path = os.path.join(out_folder, 'scale.txt')
+
+    with open(txt_path, 'w') as f:
+        f.write(str(rough_scale))
+
+
+
     for cur_path in paths:
         
         cur_filename = os.path.basename(cur_path) 

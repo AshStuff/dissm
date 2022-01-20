@@ -51,7 +51,7 @@ convert.align_large_meshes(simplified_mesh_folder, super_simplified_registered_f
 
 ## SDF Sampling
 
-All the above steps were all to construct and align nice meshes. With these nice meshes constructed, we can now finally sample the SDFs. As the DeepSDF paper explains, it is advantageous to densely sample closer to the boundary of the shape, while still having a proportion of samples uniformly sampled. I have found that the DeepSDF parameters don't work that well for modelling the liver shape. Instead, I found that sampling a higher proportion as uniformly sampled and using a larger jitter magnitude to be better. The following function will conduct this operation. Note, meshes are scaled to fit within a unit sphere before being sampled, so their world coordinate scales are completely squashed. Here we use the great [mes_to_sdf](https://github.com/marian42/mesh_to_sdf) package, which recreates the DeepSDF process. 
+All the above steps were all to construct and align nice meshes. With these nice meshes constructed, we can now finally sample the SDFs. Meshes are all scaled down to fit within a unit sphere. As the DeepSDF paper explains, it is advantageous to densely sample closer to the boundary of the shape, while still having a proportion of samples uniformly sampled. I have found that the DeepSDF parameters don't work that well for modelling the liver shape. Instead, I found that sampling a higher proportion as uniformly sampled and using a larger jitter magnitude to be better. The following function will conduct this operation. Note, meshes are scaled to fit within a unit sphere before being sampled, so their world coordinate scales are completely squashed. Here we use the great [mes_to_sdf](https://github.com/marian42/mesh_to_sdf) package, which recreates the DeepSDF process. 
 > **_HOWEVER:_** In order to use `jitter` and `uniform_proportion`, you need to use the `modified_mesh_to_sdf` package which is located in `implicitshapes/modified_mesh_to_sdf`. Navigate to that folder and install the mesh_to_sdf package:
 ```python
 python setup.py install
@@ -63,4 +63,6 @@ python setup.py install
 convert.sample_sdf(simplified_registered_folder, sdf_folder, number_of_points=1000000, uniform_proportion=0.2, jitter=.1)
 ```
 This will create `npz` files, each of which has 1 million sdf samples in which to train the DeepSDF model. 
+
+Note this function will also create a file called `scale.txt` in the `sdf_folder` path that stores the scale of the first mesh, i.e., the anchor mesh. This will be handy later on when trying to estimate pose from images. 
 

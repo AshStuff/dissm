@@ -12,6 +12,12 @@ def scale_mesh(mesh, factor=1):
 
     return trimesh.Trimesh(vertices=vertices, faces=mesh.faces)
 
+def get_scale(mesh):
+
+    vertices = mesh.vertices - mesh.bounding_box.centroid
+    distances = np.linalg.norm(vertices, axis=1)
+    return np.max(distances)
+
 
 
 
