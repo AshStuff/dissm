@@ -135,12 +135,12 @@ class Decoder(nn.Module):
             x = self.th(x)
         batch_dict[self.output_key] = x
 
-        if x.device.index == 0:
-            if self.training: 
-                with torch.no_grad(): 
-                    gt = batch_dict['gt']
-                    print(torch.min(x[:30000]).cpu().item(), torch.min(batch_dict['gt']).item())
-                    print(torch.max(x[:30000]).cpu().item(), torch.max(batch_dict['gt']).item())
-                    print(torch.mean(torch.abs(x)).cpu().item(), torch.mean(gt).cpu().item())
+        # if x.device.index == 0:
+            # if self.training: 
+                # with torch.no_grad(): 
+                    # gt = batch_dict['gt']
+                    # print(torch.min(x[:30000]).cpu().item(), torch.min(batch_dict['gt']).item())
+                    # print(torch.max(x[:30000]).cpu().item(), torch.max(batch_dict['gt']).item())
+                    # print(torch.mean(torch.abs(x)).cpu().item(), torch.mean(gt).cpu().item())
 
         return batch_dict

@@ -27,7 +27,7 @@ def run_train(args):
     ###### Step 1. Data Preparation
     ###############################################################################################
     im_dir = args.im_root
-    list_file = os.path.join(im_dir, 'json_list.json')
+    list_file = args.file_list
     with open(list_file ,'r') as f:
         json_list = json.load(f)
 
@@ -118,7 +118,7 @@ def run_train(args):
     cuda_mover.add_dependency('callback_pre_val_iter', batch_preparer)
 
     #******
-    # NOTE: DeepSDF clamps the SDF to be between -.1 to .1. I think this should not be done for SSMs, so this is 
+    # NOTE: DeepSDF clamps the SDF to be between -.1 to .1. I think this should **not** be done for SSMs, so this is 
     # commented out
     #*****
     # clamp_dist = config.solver.clampingdistance
@@ -236,6 +236,8 @@ def run_train(args):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--im_root', type=str, help="root directory of images")
+    parser.add_argument('--file_list', type=str, help="json list of SDF samples to embed")
+
     parser.add_argument('--yaml_file', type=str, help="path to yaml file for configuration", default='hyper-parameters.yml')
     parser.add_argument('--save_path', type=str, help="path to where you want checkpoints and logs save to", default='./')
     args = parser.parse_args()

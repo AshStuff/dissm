@@ -4,6 +4,8 @@ import os
 import shutil
 import math
 from enum import Enum
+from tqdm import tqdm
+from time import gmtime, strftime
 
 from collections import OrderedDict
 from easydict import EasyDict as edict
@@ -92,6 +94,161 @@ def init_workspace(ws_path):
     if os.path.exists(ws_path):
         shutil.rmtree(ws_path)
     os.makedirs(ws_path)
+
+"""
+Base transform class
+"""
+
+
+class BaseTransform(object):
+    def __init__(self, fields):
+        assert (isinstance(fields, (str, list))), "Fields must be a string or a list of strings"
+
+        if isinstance(fields, str):
+            fields = [fields]
+        self.fields = fields
+
+    def __call__(self, sample):
+        assert (isinstance(sample, dict) or isinstance(sample, Context)), "Each sample must be a dict or Context"
+
+
+class Callable(BaseTransform):
+    """
+    Apply a user-defined callable object (e.g., function or torchvision transform) as transform.
+    kw_args allows you to specify arguments, e.g., for np.stack
+    Callable(fields='image', callable_object=np.stack, axis=1)
+    """
+
+    def __init__(self, fields, callable_object, **kw_args):
+        """
+        Args:
+            callable_object (callable): Lambda/function to be used for transform.
+            kw_args: additional named arguments to send to callable
+        """
+        super().__init__(fields)
+        assert callable(callable_object), repr(type(callable_object).__name__) + " object is not callable"
+        self._callable_object = callable_object
+        self.perm_args = kw_args
+
+    def __call__(self, data_dict):
+        for field in self.fields:
+            data_dict[field] = self._callable_object(data_dict[field], **self.perm_args)
+
+        return data_dict
+
+
+class Component(object):
+    """Base class for all components that uses the callback mechanism
+    """
+
+    def __init__(self):
+        """Constructor of Component object
+
+        Args:
+            dependency: dependency for all callbacks of this component
+        """
+        self.context_key = None
+        self._dependencies = {}
+
+    def register(self, context, key):
+        self.context_key = key
+        context[key] = self
+
+    def get_callback(self, fn_name):
+        """Get callback function with the given name and its dependency
+        """
+        if hasattr(self, fn_name):
+            fn = getattr(self, fn_name)
+            dependency = self._dependencies.get(fn_name, [])
+        else:
+            fn = None
+            dependency = []
+
+        return fn, dependency
+
+    def add_dependency(self, fn_name, component_key):
+        """Add callback dependency
+        Args:
+            fn_name: the callback function to be processed
+            component_key: the context key of the component or the component instance
+                to be added to dependency
+        """
+
+        if isinstance(component_key, Component):
+            component_key = component_key.context_key
+
+        if not isinstance(component_key, str):
+            raise ValueError(
+                'The 2nd argument of add_dependency should be component key (string) in context. Got type {} instead!'.format(
+                    type(component_key)))
+
+        # If fn_name is `all`, add dependency for all callback
+        if fn_name == 'all':
+            for key in CALLBACK_FN_NAMES:
+                self.add_dependency(key, component_key)
+            return
+
+        if fn_name not in CALLBACK_FN_NAMES:
+            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
+
+        # Create list if not exist
+        if fn_name not in self._dependencies:
+            self._dependencies[fn_name] = []
+
+        # Add dependency only if it does not exist
+        if component_key not in self._dependencies[fn_name]:
+            self._dependencies[fn_name].append(component_key)
+
+    def remove_dependency(self, fn_name, component_key):
+        """Remove callback dependency
+        Args:
+            fn_name: the callback function to be processed
+            component_key: the context key of the component to be removed from the dependency
+        """
+
+        if isinstance(component_key, Component):
+            component_key = component_key.context_key
+
+        if not isinstance(component_key, str):
+            raise ValueError(
+                'The 2nd argument of remove_dependency should be component key (string) in context. Got type {} instead!'.format(
+                    type(component_key)))
+
+        # If fn_name is `all`, remove dependency for all callback
+        if fn_name == 'all':
+            for key in CALLBACK_FN_NAMES:
+                self.remove_dependency(key, component_key)
+            return
+
+        if fn_name not in CALLBACK_FN_NAMES:
+            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
+
+        if fn_name not in self._dependencies:
+            return
+
+        if component_key not in self._dependencies[fn_name]:
+            return
+
+        self._dependencies[fn_name].remove(component_key)
+
+    def clear_dependency(self, fn_name):
+        """Clear all callback dependency
+        Args:
+            fn_name: the callback function to be processed
+        """
+        # If fn_name is `all`, clear dependency for all callback
+        if fn_name == 'all':
+            for key in CALLBACK_FN_NAMES:
+                self.clear_dependency(key)
+            return
+
+        if fn_name not in CALLBACK_FN_NAMES:
+            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
+
+        if fn_name not in self._dependencies:
+            return
+
+        self._dependencies.pop(fn_name)
 
 
 class MoveToCuda(BaseTransform):
@@ -327,160 +484,6 @@ def collect_callback_fn(context, fn_name):
     return master_callback
 
 
-"""
-Base transform class
-"""
-
-
-class BaseTransform(object):
-    def __init__(self, fields):
-        assert (isinstance(fields, (str, list))), "Fields must be a string or a list of strings"
-
-        if isinstance(fields, str):
-            fields = [fields]
-        self.fields = fields
-
-    def __call__(self, sample):
-        assert (isinstance(sample, dict) or isinstance(sample, Context)), "Each sample must be a dict or Context"
-
-
-class Callable(BaseTransform):
-    """
-    Apply a user-defined callable object (e.g., function or torchvision transform) as transform.
-    kw_args allows you to specify arguments, e.g., for np.stack
-    Callable(fields='image', callable_object=np.stack, axis=1)
-    """
-
-    def __init__(self, fields, callable_object, **kw_args):
-        """
-        Args:
-            callable_object (callable): Lambda/function to be used for transform.
-            kw_args: additional named arguments to send to callable
-        """
-        super().__init__(fields)
-        assert callable(callable_object), repr(type(callable_object).__name__) + " object is not callable"
-        self._callable_object = callable_object
-        self.perm_args = kw_args
-
-    def __call__(self, data_dict):
-        for field in self.fields:
-            data_dict[field] = self._callable_object(data_dict[field], **self.perm_args)
-
-        return data_dict
-
-
-class Component(object):
-    """Base class for all components that uses the callback mechanism
-    """
-
-    def __init__(self):
-        """Constructor of Component object
-
-        Args:
-            dependency: dependency for all callbacks of this component
-        """
-        self.context_key = None
-        self._dependencies = {}
-
-    def register(self, context, key):
-        self.context_key = key
-        context[key] = self
-
-    def get_callback(self, fn_name):
-        """Get callback function with the given name and its dependency
-        """
-        if hasattr(self, fn_name):
-            fn = getattr(self, fn_name)
-            dependency = self._dependencies.get(fn_name, [])
-        else:
-            fn = None
-            dependency = []
-
-        return fn, dependency
-
-    def add_dependency(self, fn_name, component_key):
-        """Add callback dependency
-        Args:
-            fn_name: the callback function to be processed
-            component_key: the context key of the component or the component instance
-                to be added to dependency
-        """
-
-        if isinstance(component_key, Component):
-            component_key = component_key.context_key
-
-        if not isinstance(component_key, str):
-            raise ValueError(
-                'The 2nd argument of add_dependency should be component key (string) in context. Got type {} instead!'.format(
-                    type(component_key)))
-
-        # If fn_name is `all`, add dependency for all callback
-        if fn_name == 'all':
-            for key in CALLBACK_FN_NAMES:
-                self.add_dependency(key, component_key)
-            return
-
-        if fn_name not in CALLBACK_FN_NAMES:
-            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
-
-        # Create list if not exist
-        if fn_name not in self._dependencies:
-            self._dependencies[fn_name] = []
-
-        # Add dependency only if it does not exist
-        if component_key not in self._dependencies[fn_name]:
-            self._dependencies[fn_name].append(component_key)
-
-    def remove_dependency(self, fn_name, component_key):
-        """Remove callback dependency
-        Args:
-            fn_name: the callback function to be processed
-            component_key: the context key of the component to be removed from the dependency
-        """
-
-        if isinstance(component_key, Component):
-            component_key = component_key.context_key
-
-        if not isinstance(component_key, str):
-            raise ValueError(
-                'The 2nd argument of remove_dependency should be component key (string) in context. Got type {} instead!'.format(
-                    type(component_key)))
-
-        # If fn_name is `all`, remove dependency for all callback
-        if fn_name == 'all':
-            for key in CALLBACK_FN_NAMES:
-                self.remove_dependency(key, component_key)
-            return
-
-        if fn_name not in CALLBACK_FN_NAMES:
-            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
-
-        if fn_name not in self._dependencies:
-            return
-
-        if component_key not in self._dependencies[fn_name]:
-            return
-
-        self._dependencies[fn_name].remove(component_key)
-
-    def clear_dependency(self, fn_name):
-        """Clear all callback dependency
-        Args:
-            fn_name: the callback function to be processed
-        """
-        # If fn_name is `all`, clear dependency for all callback
-        if fn_name == 'all':
-            for key in CALLBACK_FN_NAMES:
-                self.clear_dependency(key)
-            return
-
-        if fn_name not in CALLBACK_FN_NAMES:
-            raise ValueError('Unrecognized callback function name: {}'.format(fn_name))
-
-        if fn_name not in self._dependencies:
-            return
-
-        self._dependencies.pop(fn_name)
 
 
 class MonitorComponent(Component):
@@ -897,6 +900,7 @@ class SupervisedTrainer(object):
             self.scaler.step(self._context['component.optimizer'])
             self.scaler.update()
         else:
+
             # Run model forward
             batch_data = self._context['component.model'](batch_data)
             # update the context

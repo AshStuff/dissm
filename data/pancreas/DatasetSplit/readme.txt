@@ -1,0 +1,1 @@
+The numbers in  every row indicate, file index (1), starting position (2-4) and size (5-7) of the bounding box tightly enclosing the pancreas organ, size of the volume (8-10).
