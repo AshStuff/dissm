@@ -1,6 +1,8 @@
 ### Deep Implicit Statistical Shape Models for 3D Medical Image Delineation
 
-Please find the paper at [DISM](https://arxiv.org/pdf/2104.02847.pdf)
+Please find the paper at [DISSM](https://arxiv.org/pdf/2104.02847.pdf)
+
+Training requires the MONAI library
 
 ### Pre-requisties
 

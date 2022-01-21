@@ -2,6 +2,20 @@
 
 Ideally, we want to predict shape parameters based on minimzing some divergence measure between a ground truth (GT) mask/sdf and the predicted SDF. In many ways, this is identical to predicting shape parameters directly, but the forward and backward passes and loss will propagate through the shape decoder/embedder.
 
+We'll start first with predicting a translation model
+
+## Create Resampled CTs
+
+Because we work with full 3D volumes, we probably can't work with the original resolution for all steps. For estimating translation, which has to occur on the full volume, we can usually get away with a coarser resolution, e.g., [4,4,4]
+
+```python
+voxel_convert.resample_cts(in_folder, out_folder, out_spacing=[4,4,4])
+```
+The function also prints out the max size of the resampled volumes. To make constant sized volumes, each volume should be padded to this max size. Here, we assume CTs so we use a constant value of -1024 to pad the volumes
+```python
+voxel_convert.pad_cts(in_folder, out_folder, out_size=MAX_SIZE, constant_values=-1024
+```
+
 ## Create GT SDF coordinate/value pairs
 
 To calculate a loss through the shape decoder, we must have GT coordinate/SDF pairs. To do this, we conduct a similar workflow to how we created the resampled CTs. 

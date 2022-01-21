@@ -1,5 +1,7 @@
-#ADAPTED FROM pytorch-3dunet
+# ADAPTED FROM pytorch-3dunet
+import torch
 import torch.nn as nn
+
 
 def number_of_features_per_level(init_channel_number, num_levels):
     return [init_channel_number * 2 ** k for k in range(num_levels)]
@@ -42,13 +44,13 @@ class AbstractEncoder(nn.Module):
 
     def __init__(self, in_channels, basic_module, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=4,
-                 conv_kernel_size=3, pool_kernel_size=2, conv_padding=1, **kwargs):
+                 conv_kernel_size=3, pool_kernel_size=2, conv_padding=1, do_pca=False, **kwargs):
         super(AbstractEncoder, self).__init__()
-
-
+        self.do_pca = do_pca
         if isinstance(f_maps, int):
             f_maps = number_of_features_per_level(f_maps, num_levels=num_levels)
 
+        # f_maps = [f_map + 128 if idx==3 else f_map for idx, f_map in enumerate(f_maps)]
         self.output_size = f_maps[-1]
 
         # create encoder path consisting of Encoder modules. Depth of the encoder is equal to `len(f_maps)`
@@ -65,7 +67,17 @@ class AbstractEncoder(nn.Module):
                                   padding=conv_padding)
             else:
                 # TODO: adapt for anisotropy in the data, i.e. use proper pooling kernel to make the data isotropic after 1-2 pooling operations
-                encoder = Encoder(f_maps[i - 1], out_feature_num,
+                # import pdb;pdb.set_trace()
+                # if i == 2:
+                #     f_map = f_maps[i - 1] + 128
+                # else:
+                #     f_map = f_maps[i - 1]
+                f_map = f_maps[i - 1]
+                # if do_pca:
+                #     if i == 2:
+                #         f_map +=256
+                #
+                encoder = Encoder(f_map, out_feature_num,
                                   basic_module=basic_module,
                                   conv_layer_order=layer_order,
                                   conv_kernel_size=conv_kernel_size,
@@ -76,17 +88,30 @@ class AbstractEncoder(nn.Module):
             encoders.append(encoder)
 
         self.encoders = nn.ModuleList(encoders)
+        self._pool = nn.AdaptiveAvgPool3d(1)
+        #if do_pca:
+        #    self. = nn.Linear(256, 64, bias=False)
+        #     self.latent_reduce_2 = nn.Linear(256, 128, bias=False)
 
-
-    def forward(self, x):
+    def forward(self, x, latent_vecs=None):
         # encoder part
-        for encoder in self.encoders:
-
-            x = encoder(x)
-
-        return x
-
-
+        batch_size = x.shape[0]
+        local_features = []
+        for idx, encoder in enumerate(self.encoders):
+            # if self.do_pca:
+            #     if idx == 1:
+            #         # import pdb;pdb.set_trace()
+            #         x = encoder(x, latent_vecs=self.latent_reduce_1(latent_vecs))
+            #     # elif idx == 2:
+            #     #     x = encoder(x, latent_vecs=self.latent_reduce_2(latent_vecs))
+            #     else:
+            #         x = encoder(x, latent_vecs=None)
+            # else:
+            #     x = encoder(x, latent_vecs=None)
+            x = encoder(x, latent_vecs=None)
+            if idx >= 4:
+                local_features.append(self._pool(x).view(batch_size, -1))
+        return x, local_features
 
 
 def conv3d(in_channels, out_channels, kernel_size, bias, padding):
@@ -154,6 +179,7 @@ def create_conv(in_channels, out_channels, kernel_size, order, num_groups, paddi
             raise ValueError(f"Unsupported layer type '{char}'. MUST be one of ['b', 'g', 'r', 'l', 'e', 'c']")
 
     return modules
+
 
 class SingleConv(nn.Sequential):
     """
@@ -260,7 +286,7 @@ class ExtResNetBlock(nn.Module):
         else:
             self.non_linearity = nn.ReLU(inplace=True)
 
-    def forward(self, x):
+    def forward(self, x, latent_vecs=None):
 
         # apply first convolution and save the output as a residual
         out = self.conv1(x)
@@ -271,10 +297,15 @@ class ExtResNetBlock(nn.Module):
         out = self.conv3(out)
 
         out += residual
+        if latent_vecs is not None:
+            latent_vecs = latent_vecs.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            latent_vecs = latent_vecs.repeat(1, 1, out.shape[2], out.shape[3], out.shape[4])
+            # out = torch.cat((out, latent_vecs), 1)
+            out = out + latent_vecs
+
         out = self.non_linearity(out)
 
         return out
-
 
 
 class Encoder(nn.Module):
@@ -318,12 +349,11 @@ class Encoder(nn.Module):
                                          num_groups=num_groups,
                                          padding=padding)
 
-    def forward(self, x):
+    def forward(self, x, latent_vecs=None):
         if self.pooling is not None:
             x = self.pooling(x)
-        x = self.basic_module(x)
+        x = self.basic_module(x, latent_vecs=latent_vecs)
         return x
-
 
 
 class ResidualEncoder(AbstractEncoder):
@@ -335,30 +365,35 @@ class ResidualEncoder(AbstractEncoder):
     """
 
     def __init__(self, in_channels, f_maps=64, layer_order='gcr',
-                 num_groups=8, num_levels=5, conv_padding=1, **kwargs):
-        super(ResidualEncoder, self).__init__(in_channels=in_channels, 
-                                             basic_module=ExtResNetBlock, f_maps=f_maps, layer_order=layer_order,
-                                             num_groups=num_groups, num_levels=num_levels,
-                                             conv_padding=conv_padding,
-                                             **kwargs)
-
-
+                 num_groups=8, num_levels=5, conv_padding=1, do_pca=False, **kwargs):
+        super(ResidualEncoder, self).__init__(in_channels=in_channels,
+                                              basic_module=ExtResNetBlock, f_maps=f_maps, layer_order=layer_order,
+                                              num_groups=num_groups, num_levels=num_levels,
+                                              conv_padding=conv_padding, do_pca=do_pca,
+                                              **kwargs)
 
 
 class WrapperResidualEncoder(nn.Module):
-    def __init__(self, num_outputs, im_key='im', out_key='theta', in_channels=1, f_maps=16):
+    def __init__(self, num_outputs, im_key='im', out_key='theta', in_channels=1, f_maps=16, do_pca=False):
         super().__init__()
         self.im_key = im_key
         self.out_key = out_key
-        self._model = ResidualEncoder(in_channels=in_channels, f_maps=f_maps)
+        self.do_pca = do_pca
+        self._model = ResidualEncoder(in_channels=in_channels, f_maps=f_maps, do_pca=do_pca)
         self._pool = nn.AdaptiveAvgPool3d(1)
         self._model_classifier = nn.Linear(self._model.output_size, num_outputs)
 
     def forward(self, data_dict):
-        output = self._model(data_dict[self.im_key])
+        if self.do_pca:
+            output, local_features = self._model(data_dict[self.im_key], data_dict['latent_vecs'])
+        else:
+            output, local_features = self._model(data_dict[self.im_key])
+        local_features = torch.cat(local_features, 1)
         output = self._pool(output)
         output = output.view((output.shape[0], -1))
         self.features = output
+        self.local_features = local_features
+        # print(local_features.shape)
         output = self._model_classifier(output)
         data_dict[self.out_key] = output
         return data_dict
