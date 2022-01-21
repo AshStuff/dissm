@@ -1,6 +1,6 @@
 # Predicting shape parameters through the SDF
 
-Ideally, we want to predict shape parameters based on minimzing some divergence measure between a ground truth (GT) mask/sdf and the predicted SDF. In many ways, this is identical to predicting shape parameters directly, but the forward and backward passes and loss will propagate through the shape decoder. 
+Ideally, we want to predict shape parameters based on minimzing some divergence measure between a ground truth (GT) mask/sdf and the predicted SDF. In many ways, this is identical to predicting shape parameters directly, but the forward and backward passes and loss will propagate through the shape decoder/embedder.
 
 ## Create GT SDF coordinate/value pairs
 

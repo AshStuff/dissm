@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from skimage.measure import marching_cubes_lewiner
+from skimage.measure import marching_cubes
 import trimesh
 import nibabel as ni
 import torch
@@ -296,7 +296,7 @@ def infer_mesh(model_path, config_file, latent_idx, save_loc, sdf_size=300, batc
     sdf = infer_from_latent(model_path, config_file, latent_vec, sdf_size=sdf_size,
             batch_size=batch_size)
     
-    vertices, triangles, _, _ = marching_cubes_lewiner(sdf, 0, allow_degenerate=False)
+    vertices, triangles, _, _ = marching_cubes(sdf, 0, allow_degenerate=False)
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
     mesh = scale_mesh(mesh)
