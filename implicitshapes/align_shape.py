@@ -64,7 +64,7 @@ def project_to_pixels(mesh, affine):
     return trimesh.Trimesh(vertices, mesh.faces)
 
 
-def create_scale_translation_json(in_folder, im_folder, mean_mesh_file):
+def create_scale_translation_json(in_folder, im_folder, mean_mesh_file, scale_factor):
     """
     Computes the scale and translation needed to align a mean mesh to each of the images
     """
@@ -73,11 +73,11 @@ def create_scale_translation_json(in_folder, im_folder, mean_mesh_file):
     filelist.sort()
     json_list = []
     for cur_file in tqdm.tqdm(filelist):
-        basename = os.path.basename(cur_file).replace('_Larynx', '')
+        basename = os.path.basename(cur_file)
         im_basename = basename[:-4] + '.nii.gz'
         im_path = os.path.join(im_folder, im_basename)
         # get the transformation parameters
-        _, trans_dict = align_meshes_pixel_space(cur_file, mean_mesh_file, im_path)
+        _, trans_dict = align_meshes_pixel_space(cur_file, mean_mesh_file, im_path, scale_factor)
 
         cur_dict = {
             'im': im_basename,
@@ -112,7 +112,7 @@ def move_to_pixel_space(anchor_path, anchor_image):
     return a_mesh
 
 
-def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path):
+def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path, scale_factor):
     # get reference image
     ref_im = sitk.ReadImage(ref_im_path)
     # load anchor mesh
@@ -127,7 +127,7 @@ def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path):
     # at the origin and should be normalized to be between -1 and 1
 
     # but we scale it by 60 as a first approximation
-    m_mesh = scale_mesh(m_mesh, 1)
+    m_mesh = scale_mesh(m_mesh, scale_factor)
 
     # now conduct cpd alignment
     new_mesh, trans_dict = rigid_align_meshes(a_mesh, m_mesh)

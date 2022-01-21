@@ -20,22 +20,44 @@ voxel_convert.pad_cts(in_folder, out_folder, out_size=MAX_SIZE, constant_values=
 
 To calculate a loss through the shape decoder, we must have GT coordinate/SDF pairs. To do this, we conduct a similar workflow to how we created the resampled CTs. 
 
-First we must pad the original masks to ensure that we don't have any areas where they are cut off (similar to what we had to do when converting them to meshes)
+
+First we must pad the original masks to ensure that we don't have any areas where they are cut off (similar to what we had to do when converting them to meshes). 
 ```python
 voxel_convert.pad_cts(orig_mask_folder, padded_mask_folder, out_size=[1000,1000,1000], constant_values=0)
 ```
-Here we pick an out size that will definitely give us enough space. With the padded masks created, we can then compute SDF versions of the masks. We also want them to resampled to the same space as our `256x256x162` resampled CTs we use as input into our prediction model
+Here we pick an out size that will definitely give us enough space, which is absolute overkill, but probably a smaller pad value would work just as well. With the padded masks created, we can then compute SDF versions of the masks. We also want them to resampled to the same space as our resampled CTs we use as input into our prediction model
 
 ```python
 voxel_convert.create_resample_sdfs(padded_mask_folder, sdf_folder, resampled_padded_ct_folder, anchor_mesh)
 ```
-This function will compute the SDFs (difference values based on world coordinate spacing) and normalize them using the anchor mesh. This anchor mesh will typically be the first mesh in your folder of meshes, i.e., `liver_0.obj` in `Meshes_Simplify`. This function will also resample each resulting SDF to the same coordinate space as the correspoding CT found in `resampled_padded_ct_folder`, meaning it will do the padding the resampling. 
+This function will compute the SDFs (difference values based on world coordinate spacing) and normalize them using the anchor mesh. This anchor mesh will typically be the first mesh in your folder of meshes, i.e., `liver_0.obj` in `Meshes_Simplify`. This function will also resample each resulting SDF to the same coordinate space as the correspoding CT found in `resampled_padded_ct_folder`, meaning it will do the padding and the resampling. 
 
 Now with appropriate SDF volumes created, we can samples the SDF values inside each volume to create a set of SDF values and coordinate pairs that are compatible with the DeepSDF decoder model. 
 
 ```python
 voxel_convert.create_sdf_voxel_samples(sdf_folder, sdf_sample_folder)
+
 ```
+
+## OPTIONAL estimate GT rigid transform parameters
+
+We can use the pycpd package to estimate what translation, rotation, and scale is required to align the mean shape to each individual shape in **pixel space**. This doesn't give us perfect GT, because pycpd only does isotropic scale and is also an approximation that requires intuiting correspondence between shapes, but it will at least give us an idea on what we should aim for in our own pose estimation process.
+
+### Mean Mesh
+
+First, create a mean mesh, discussed in [DEEPSDF.md](DEEPSDF.md). Then simplify it by a factor 0.01 using the Fast Quadric method. The resulting mean mesh will be normalized to have vertices in the range of [-1, 1] and centered at [0,0,0] in some canonical space. 
+
+### Computing GT parameters
+
+```python
+align_shape.create_scale_translation_json(in_folder, im_folder, mean_mesh_file, scale_factor)
+```
+
+This function will project all meshes in `in_folder` to pixel space corresponding to the matching CTs in `im_folder`. Here `in_folder` should be the folder of your super simplified meshes from [CONVERT.md](CONVERT.md) and the `im_folder` should be the resized and padded CTs from above. `mean_mesh_file` should be the simplified mean mesh .obj file. `scale_factor` should be the scale outputted `scale.txt` in the SDF generation step in [CONVERT.md](CONVERT.md).
+
+After projecting to pixel space, the function will then align the mean mesh to each individual mesh using pycpd. It will then save a `json` file in `im_folder` that contains the estimated translation/rotation/scale in **pixel_space**, which is the space we need to operate in when we peform pose estimation. These rough GT values can be useful for debugging.
+
+## Creating a training json file
 
 The final step is to create a json file that we can use for training. Here we'll make sure to also include in our training json the "ground truth" translation, scales and rotations in the json file calculated using the CDF using the `align_shape.create_scale_translation_json(in_folder, im_folder, mean_mesh_file)` function seen in [DIRECT_PREDICT](DIRECT_PREDICT.md). We do this for debugging and training purposes. 
 

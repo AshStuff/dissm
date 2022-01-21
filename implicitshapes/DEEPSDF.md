@@ -30,7 +30,7 @@ However, you should only train a shape embedder on shapes that will not be in th
 
 `IM_ROOT` should point to the folder of SDF samples. `SAVE_PATH` should point to where you want the checkpoints saved. `config.yml` holds the network and training configurations that seem to work well
 ```python
-python embed_shape.py --im_root IM_ROOT --yaml_file config.yml --save_path SAVE_PATH --file_list JSON_FILE
+python embed_shape.py --im_root IM_ROOT --yaml_file configs/embed_config.yml --save_path SAVE_PATH --file_list JSON_FILE
 ```
 
 
