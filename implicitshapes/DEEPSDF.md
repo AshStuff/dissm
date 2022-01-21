@@ -34,4 +34,17 @@ python embed_shape.py --im_root IM_ROOT --yaml_file config.yml --save_path SAVE_
 ```
 
 
+## Verification
+
+After training the shape embedding model, you can check how well the model visually captures the distribution of shapes:
+
+```python
+infer_shape.infer_mean_mesh(MODEL_CKPT, config.yml, SAVE_LOC, SDF_RESOLUTION)
+```
+The above function will generate a uniformly sampled SDF from the mean latent vector and then perform marching cubes to obtain a mesh. The resulting file can be loaded into a mesh viewwer (MITKWorkbench, pyrender). You should see a reasonable organ shape. 
+
+Individual shapes from the training set can also be visualized, where `LATENT_IDX` should specify the index in the training json of the shape you want ot visualize:
+```python
+infer_shape.infer_mesh(MODEL_CKPT, config.yml, LATENT_IDX, SAVE_LOC, SDF_RESOLUTION)
+```
 

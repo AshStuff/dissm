@@ -5,11 +5,16 @@ import trimesh
 import nibabel as ni
 import torch
 from sklearn.decomposition import PCA
-from deep_sdf_decoder import create_decoder_model
+from networks.deep_sdf_decoder import create_decoder_model
 import SimpleITK as sitk
 from dlt_utils import read_yaml, load_model_from_ckpt
 
-def infer_from_latent(model_path, config_file, latent_vec, sdf_size=300, batch_size=50000, normalized=True, scale=None, trans=None):
+
+"""
+Infer an SDF given a latent code in directly in normalized [-1, 1] space
+Uniformly samples an SDF based off of the sdf_size parameter
+"""
+def infer_from_latent(model_path, config_file, latent_vec, sdf_size=300, batch_size=50000):
 
     config = read_yaml(config_file)
     
@@ -20,15 +25,8 @@ def infer_from_latent(model_path, config_file, latent_vec, sdf_size=300, batch_s
     model = model.cuda()
     model.eval()
 
-    if normalized:   
-        size_range = np.linspace(-1, 1, sdf_size)
-        points = np.meshgrid(size_range, size_range, size_range)
-    else:
-        #TODO Update scale/translation order/convention
-        size_range_x = (np.arange(0, sdf_size[0]) - trans[0])*scale[0]
-        size_range_y = (np.arange(0, sdf_size[1]) - trans[1])*scale[1]
-        size_range_z = (np.arange(0, sdf_size[2]) - trans[2])*scale[2]
-        points = np.meshgrid(size_range_x, size_range_y, size_range_z)
+    size_range = np.linspace(-1, 1, sdf_size)
+    points = np.meshgrid(size_range, size_range, size_range)
 
     points = np.stack(points)
 
@@ -287,7 +285,7 @@ def interpolate_mesh(model_path, config_file, latent_one, latent_two, save_loc_r
         
 
 
-def infer_mesh(model_path, config_file, latent_idx, save_loc, sdf_size=300, batch_size=50000):
+def infer_mesh(model_path, config_file, latent_idx, save_loc, sdf_size=300, batch_size=500000):
 
 
     loaded = torch.load(model_path)
@@ -301,6 +299,8 @@ def infer_mesh(model_path, config_file, latent_idx, save_loc, sdf_size=300, batc
     vertices, triangles, _, _ = marching_cubes_lewiner(sdf, 0, allow_degenerate=False)
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
+    mesh = scale_mesh(mesh)
+
     mesh.export(save_loc)
 
 
