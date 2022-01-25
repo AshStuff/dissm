@@ -32,7 +32,7 @@ voxel_convert.create_resample_sdfs(padded_mask_folder, sdf_folder, resampled_pad
 ```
 This function will compute the SDFs (difference values based on world coordinate spacing) and normalize them using the anchor mesh. This anchor mesh will typically be the first mesh in your folder of meshes, i.e., `liver_0.obj` in `Meshes_Simplify`. This function will also resample each resulting SDF to the same coordinate space as the correspoding CT found in `resampled_padded_ct_folder`, meaning it will do the padding and the resampling. 
 
-Now with appropriate SDF volumes created, we can samples the SDF values inside each volume to create a set of SDF values and coordinate pairs that are compatible with the DeepSDF decoder model. 
+Now with appropriate SDF volumes created, we can samples the SDF values inside each volume to create a list of SDF values and coordinate pairs that are compatible with the DeepSDF decoder model, i.e., a set of `.npz` files that follows the format of files we created in [CONVERT.md](CONVERT.md). Note, the files used to train the shape embedding model were in canonical [-1, 1] space. But here we create coordinate that are specified in **pixel space**. Corresponding SDF values are still normalized to canonical space because we normalize them using the anchor mesh. 
 
 ```python
 voxel_convert.create_sdf_voxel_samples(sdf_folder, sdf_sample_folder)
@@ -81,12 +81,13 @@ The resulting training json will look like this:
 
 ## Creating a Mean SDF volume
 
-Since we would like to incorporate the concept of "state" to the network, so that the network can know what the initial guess is and then refine that guess (kind of like an active contour model), we need to create an SDF volume that represents the initial guess. For now (since the extreme point guess is not incoporated), we will use a universal initial guess, which is based on the mean translation and scaling estimated from the CPD step: `t=[148.5, 132.8, 93.2]` and `s=63.5`. We then create a corresponding SDF using:
+Since we would like to incorporate the concept of "state" to the network, so that the network can know what the initial guess is and then refine that guess. Here we use an SDF volume of the mean mesh that represents the guesses or current pose state for rigid pose estimation. We will use the initial guess to be the center of the image and we start with the scale in `scale.txt` from the SDF generation step in [CONVERT.md](CONVERT.md).
+
 ```python
-ins.infer_mean_aligned_sdf(shape_embedding_ckpt, shape_embedding_config, out_path, example_CT, trans=[148.5, 132.8, 93.2], scale=[-1/63.5, -1/63.5, 1/63.5*(5/2)])
+ins.infer_mean_aligned_sdf(shape_embedding_ckpt, shape_embedding_config, out_path, example_CT,  scale=scale_factor)
 ```
 
-Here `example_CT` can be any resample and padded CT, which will allow the function to create a mean SDF sampled in the same coordinate space. We will use this mean SDF file as an extra channel for the prediction step. 
+Here `example_CT` can be any resampled and padded CT, which will allow the function to create a mean SDF sampled in the same coordinate space. We will use this mean SDF file as an extra channel for the prediction step. 
 
 ## Estimating Translation through the SDFs
 

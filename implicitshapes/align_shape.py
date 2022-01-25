@@ -113,6 +113,7 @@ def move_to_pixel_space(anchor_path, anchor_image):
 
 
 def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path, scale_factor):
+
     # get reference image
     ref_im = sitk.ReadImage(ref_im_path)
     # load anchor mesh
@@ -120,15 +121,16 @@ def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path, scale_factor
     # load moving mesh
     m_mesh = trimesh.load(moving_path)
     affine = get_affine_from_itk(ref_im)
+    #  we scale the mean mesh by its world coordinate scale factor  since it's in canonical coordinates
+    m_mesh = scale_mesh(m_mesh, scale_factor)
+
     # we project both to pixel space 
     a_mesh = project_to_pixels(a_mesh, affine)
     m_mesh = project_to_pixels(m_mesh, affine)
     # then we scale the moving mesh because we assume it's a DeepSDF mesh, so it should be centered
     # at the origin and should be normalized to be between -1 and 1
 
-    # but we scale it by 60 as a first approximation
-    m_mesh = scale_mesh(m_mesh, scale_factor)
-
+    
     # now conduct cpd alignment
     new_mesh, trans_dict = rigid_align_meshes(a_mesh, m_mesh)
     return new_mesh, trans_dict

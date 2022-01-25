@@ -185,21 +185,38 @@ def infer_mean_mesh(model_path, config_file, save_loc, sdf_size=300, batch_size 
     sdf = infer_from_latent(model_path, config_file, latent_vec, sdf_size=sdf_size,
             batch_size=batch_size)
     
-    vertices, triangles, _, _ = marching_cubes_lewiner(sdf, 0, allow_degenerate=False)
+    vertices, triangles, _, _ = marching_cubes(sdf, 0, allow_degenerate=False)
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
     mesh = scale_mesh(mesh)
     mesh.export(save_loc)
 
 
-def infer_mean_aligned_sdf(model_path, config_file, save_loc, ref_im, affine_mtx, Apx2sdf, batch_size = 500000):
-
+def infer_mean_aligned_sdf(model_path, config_file, save_loc, ref_im, scale, affine_mtx=None, batch_size = 500000):
+    """
+    Compute an SDF of the mean latent vector and project it to the ref_im pixel space
+    Must also input the scale factor that scale pixel values to the SDF canonical space
+    """
+    if affine_mtx is None:
+        affine_mtx = np.eye(4)
     loaded = torch.load(model_path)
     latent_vecs = loaded['component.latent_vector']['weight']
     # import pdb;pdb.set_trace()
     latent_vec = torch.mean(latent_vecs, 0)
     ref_im = sitk.ReadImage(ref_im)
     sdf_size = ref_im.GetSize()
+    ref_spacing = ref_im.GetSpacing()
+
+    Apx2sdf = np.eye(4)
+    Apx2sdf[0, 3] = -(sdf_size[0] - 1)/2
+    Apx2sdf[1, 3] = -(sdf_size[1] - 1)/2
+    Apx2sdf[2, 3] = -(sdf_size[2] - 1)/2
+
+    Apx2sdf[0, :] *= -ref_spacing[0] / scale
+    Apx2sdf[1, :] *= -ref_spacing[1] / scale
+    Apx2sdf[2, :] *= ref_spacing[2] / scale
+
+    print(Apx2sdf)
 
     sdf = infer_from_latent_affine_mtx(model_path, config_file, latent_vec, sdf_size=sdf_size,
             batch_size=batch_size, affine_mtx=affine_mtx, Apx2sdf=Apx2sdf)
