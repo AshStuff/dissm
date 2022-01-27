@@ -116,23 +116,38 @@ def align_meshes_pixel_space(anchor_path, moving_path, ref_im_path, scale_factor
 
     # get reference image
     ref_im = sitk.ReadImage(ref_im_path)
-    # load anchor mesh
+    # load anchor mesh in world coordinates
     a_mesh = trimesh.load(anchor_path)
     # load moving mesh
     m_mesh = trimesh.load(moving_path)
     affine = get_affine_from_itk(ref_im)
-    #  we scale the mean mesh by its world coordinate scale factor  since it's in canonical coordinates
-    m_mesh = scale_mesh(m_mesh, scale_factor)
+
+    # we need to scale the mean mesh to project it to pixel coordinates since it's in canonical [-1, 1] coordinates
+    # it will be set to be located in the center of the image in pixel coordinates
+    im_size = ref_im.GetSize()
+    ref_spacing = ref_im.GetSpacing()
+
+    Apx2sdf = np.eye(4)
+    Apx2sdf[0, 3] = -(im_size[0] - 1)/2
+    Apx2sdf[1, 3] = -(im_size[1] - 1)/2
+    Apx2sdf[2, 3] = -(im_size[2] - 1)/2
+
+    Apx2sdf[0, :] *= -ref_spacing[0] / scale_factor
+    Apx2sdf[1, :] *= -ref_spacing[1] / scale_factor
+    Apx2sdf[2, :] *= ref_spacing[2] / scale_factor
+
 
     # we project both to pixel space 
     a_mesh = project_to_pixels(a_mesh, affine)
-    m_mesh = project_to_pixels(m_mesh, affine)
-    # then we scale the moving mesh because we assume it's a DeepSDF mesh, so it should be centered
-    # at the origin and should be normalized to be between -1 and 1
+    m_mesh = project_to_pixels(m_mesh, Apx2sdf)
 
-    
+    # because cpd does scale, roation, then translation, the t value will not match the pose estimation value
+    a_center = a_mesh.bounding_box.centroid
+    t_override = [cur_a - (cur_size - 1)/2 for cur_a, cur_size in zip(a_center, im_size)]
+
     # now conduct cpd alignment
     new_mesh, trans_dict = rigid_align_meshes(a_mesh, m_mesh)
+    trans_dict['t'] = t_override
     return new_mesh, trans_dict
 
 

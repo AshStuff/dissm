@@ -80,7 +80,7 @@ class CropVolume():
 
 
 class Transforms():
-    def __init__(self, mean_np, Apx2sdf, gt_trans_key, im_dir, global_init_mtx):
+    def __init__(self, mean_np, Apx2sdf, gt_trans_key, im_dir):
         self.Apx2sdf = Apx2sdf
         self.gt_trans_key = gt_trans_key
         self.im_dir = im_dir
@@ -88,9 +88,6 @@ class Transforms():
         # affine from sdf to pixel space
         self.Asdf2px = np.linalg.inv(Apx2sdf)
 
-        # account for the initial location at the center of the image
-        global_init_mtx[:3, 3] -= self.Asdf2px[:3, 3]
-        self.global_init_mtx = global_init_mtx
         # create a centering transform to allow rotations to be properly applied
 
     @property
@@ -100,11 +97,6 @@ class Transforms():
             NiBabelLoader(fields='im', root_dir=self.im_dir),
             RandShiftIntensityd(keys='im', offsets=10, prob=0.5),
             RandGaussianNoised(keys='im', std=5, prob=0.5),
-            GaussianBlurTransform(blur_sigma=(1, 5),
-                                  keys=['im'],
-                                  different_sigma_per_channel=True,
-                                  p_per_channel=0.5,
-                                  p_per_sample=0.5),
             GaussianBrightnessTransform(mu=0.0,
                                         sigma=2,
                                         keys=['im'],
@@ -126,7 +118,7 @@ class Transforms():
             RandomChoice(
                 [AddMaskChannel(
                     mean_np=self.mean_np,
-                    global_init_mtx=self.global_init_mtx,
+                    global_init_mtx=None,
                     init_affine_key=None,
                     affine_mtx_key='affine_matrix',
                     translate_range=(10, 10, 10)),

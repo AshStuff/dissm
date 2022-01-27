@@ -314,9 +314,22 @@ def main(args):
     # grab the mean shape sdf
     mean_ni = nib.load(args.mean_sdf_file)
     mean_np = mean_ni.get_fdata()
+    mean_affine = mean_ni.affine
     centering = -(np.asarray(mean_np.shape) - 1) / 2
+
+    # create affine matrix to center pixel coordiantes (useful when conducting rigid transforms)
     center_affine = np.eye(4)
     center_affine[:3, 3] = centering
+
+    Apx2sdf = np.eye(4)
+    Apx2sdf[0, 3] = -(mean_np.shape[0] - 1)/2
+    Apx2sdf[1, 3] = -(mean_np.shape[1] - 1)/2
+    Apx2sdf[2, 3] = -(mean_np.shape[2] - 1)/2
+
+    Apx2sdf[0, :] *= -mean_affine[0,0] / scale
+    Apx2sdf[1, :] *= -mean_affine[1,1] / scale
+    Apx2sdf[2, :] *= mean_affine[2,2] / scale
+
 
     gt_trans_key = 't'
     transforms = Transforms(mean_np, cfg.Apx2sdf, gt_trans_key=gt_trans_key, im_dir=im_dir,
