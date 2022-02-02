@@ -6,7 +6,7 @@ import SimpleITK as sitk
 import nibabel as nib
 import numpy as np
 import torch
-from predict_params import infer_mean_aligned_sdf
+from infer_shape import infer_mean_aligned_sdf
 from networks.encoder import WrapperResidualEncoder
 
 from dataset import Affine_w_Mtx
@@ -109,7 +109,7 @@ def predict_params_channel(model_path, volume_file, mean_sdf):
 
     loaded = torch.load(model_path)
 
-    model_weights = loaded['component.model']
+    model_weights = loaded['state_dict']
 
     model_dict = {k[15:]: v for k, v in model_weights.items() if 'encoder' in k}
 
@@ -134,9 +134,8 @@ def predict_params_channel(model_path, volume_file, mean_sdf):
     return data_dict
 
 
-def predict_sdf_steps(model_encoder_path, model_decoder_path, decoder_config, volume_file, mean_sdf_file,
-                      init_affine=None, steps=5, do_scale=True, Apx2sdf=None):
-    Asdf2px = np.linalg.inv(Apx2sdf)
+def predict_sdf_steps(model_encoder_path, volume_file, mean_sdf_file,
+                      init_affine=None, steps=5, do_scale=True):
     # gt_trans = np.asarray([141.2, 133.0, 81.02])
 
     # gt_trans = gt_trans - Asdf2px[:3,3]
@@ -145,11 +144,6 @@ def predict_sdf_steps(model_encoder_path, model_decoder_path, decoder_config, vo
 
     if init_affine is None:
         init_affine = np.eye(4)
-        init_affine[0, 3] = 148.5
-        init_affine[1, 3] = 132.8
-        init_affine[2, 3] = 93.2
-        # account for the initial location at the center of the image
-        init_affine[:3, 3] -= Asdf2px[:3, 3]
 
     mean_sdf = nib.load(mean_sdf_file)
     mean_sdf = mean_sdf.get_fdata()
@@ -158,7 +152,7 @@ def predict_sdf_steps(model_encoder_path, model_decoder_path, decoder_config, vo
     affine_mtx = init_affine
     for cur_step in range(steps):
         im_affine_mtx = np.linalg.inv(affine_mtx)
-        affine_trans = Affine_w_Mtx(affine_mtx=torch.tensor(im_affine_mtx))
+        affine_trans = Affine_w_Mtx(affine_mtx=torch.tensor(im_affine_mtx), padding_mode='border')
         new_mean_np = affine_trans(np.expand_dims(mean_sdf, 0))
         new_mean_np = new_mean_np[0, :]
 

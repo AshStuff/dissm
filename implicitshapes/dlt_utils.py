@@ -14,6 +14,8 @@ import torch
 import numpy as np
 from flatdict import FlatDict
 
+import nibabel as nib
+
 CALLBACK_FN_NAMES = [
     'callback_pre_train_epoch',
     'callback_post_train_epoch',
@@ -136,6 +138,145 @@ class Callable(BaseTransform):
 
         return data_dict
 
+class CenterIntensities(BaseTransform):
+    """
+    Transform that subtracts by a subtrahend and divides by a divisor, most
+    often done to whiten data by subtracting the mean and dividing by the std
+    deviation.
+
+    Note, this class assumes the pytorch shape conventions:
+        https://pytorch.org/docs/stable/nn.html#torch.nn.Conv2d
+    which consider the first dimension (index 0) to be the channel dimension.
+    """
+
+    def __init__(self, fields, subtrahend, divisor=1.0):
+        """
+        Args:
+            fields: fields to apply centering
+            subtrahend: the subtrahend used to subtract, if a list then subtraction
+                is performed per channel
+            divisor: sames as subtrahend, but specifies the divisor.
+        """
+        super().__init__(fields)
+
+        # convert any lists to np.arrays, with an extra singleton dimension
+        # to allow broadcasting
+        if isinstance(divisor, list):
+            divisor = np.array(divisor)
+            divisor = np.expand_dims(divisor, 1)
+        if isinstance(subtrahend, list):
+            subtrahend = np.array(subtrahend)
+            subtrahend = np.expand_dims(subtrahend, 1)
+        self.subtrahend = subtrahend
+        self.divisor = divisor
+
+    def __call__(self, data_dict):
+
+        for field in self.fields:
+            old_shape = data_dict[field].shape
+
+            # reshape val, to allow broadcasting over 2D, 3D, or nd data
+            val = data_dict[field].reshape((data_dict[field].shape[0], -1))
+
+            # perform centering
+            val -= self.subtrahend
+            val /= self.divisor
+            data_dict[field] = val.reshape(old_shape)
+
+        return data_dict
+
+class Clip(BaseTransform):
+    """
+    Will clip numpy arrays and pytorch tensors
+    """
+    def __init__(self, fields, new_min=0.0, new_max=1.0):
+        """
+        new_min: min value to clip to
+        new_max: max value to clip to
+        """
+        super().__init__(fields)
+
+        self._new_min = new_min
+        self._new_max = new_max
+
+    def __call__(self, data_dict):
+
+        for field in self.fields:
+            val = data_dict[field]
+            # check if numpy or torch.Tensor, and call appropriate method
+            if isinstance(val, torch.Tensor):
+                data_dict[field] = torch.clamp(val, self._new_min, self._new_max)
+            else:
+                data_dict[field] = np.clip(val, self._new_min, self._new_max)
+
+        return data_dict
+
+class ExpandDims(BaseTransform):
+    """
+    Adds a dimension to specified axis, works for both numpy arrays and pytorch
+    tensors
+    """
+
+    def __init__(self, fields, axis=0):
+        super().__init__(fields)
+
+        self._axis = axis
+
+    def __call__(self, data_dict):
+        super().__call__(data_dict)
+
+        for field in self.fields:
+            val = data_dict[field]
+            if isinstance(val, torch.Tensor):
+                data_dict[field] = torch.unsqueeze(val, self._axis)
+            else:
+                data_dict[field] = np.expand_dims(val, self._axis)
+
+        return data_dict
+
+class NiBabelLoader(BaseTransform):
+    """
+    Loads an nibabel volume, given a set of fields given as paths
+    For each field, will also add a new field appended with '_meta' that
+    contains affine transform and nibabel header information
+    """
+
+
+    def __init__(self, fields, root_dir=None, dtype=np.float32):
+
+        if root_dir is not None:
+            assert(type(root_dir)==str), "Root dir must be string"
+
+        super().__init__(fields)
+
+        self._root_dir = root_dir
+        self._dtype = dtype
+
+    def __call__(self, sample):
+
+        super().__call__(sample)
+
+        for field in self.fields:
+            path = sample[field]
+            if self._root_dir:
+                path = os.path.join(self._root_dir, path)
+            img = nib.load(path)
+            # overwrite the path with the numpy array
+            img_data = img.get_fdata().astype(self._dtype)
+            sample[field] = img_data
+            # create a dict for meta info, with fields for affine and one for header
+            meta = {}
+            meta['affine'] = img.affine
+            # copy header information in a native dict, that is compatible with pytorch batching
+            meta['header'] = {}
+            meta['bitpix'] = img.header['bitpix']
+            meta['dim'] = img.header['dim']
+            meta['pixdim'] = img.header['pixdim']
+            meta['scl_slope'] = img.header['scl_slope']
+            meta['scl_inter'] = img.header['scl_inter']
+            sample[field+'_meta'] = meta
+
+        return sample
 
 class Component(object):
     """Base class for all components that uses the callback mechanism

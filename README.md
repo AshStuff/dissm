@@ -23,31 +23,11 @@ then use the translated shape to crop and then perform subsequent models with th
 
 ### Training Translation
 
-Before starting to train the translation model, we must first complete the steps mentioned in Pre-requisties [1, 2].
-We must have the volumes resampled to a fixed resolution and generated sdf values for those resampled volumes using the packages mentioned 
-in the pre-requisites.
-    We use the resample voxel spacing as (4,4,4) for liver. <br>
-    We use the resample voxel spacing as (4,4,1.5) for larynx.
+See [PREDICT_TRANSLATION.md](implicitshapes/PREDICT_TRANSLATION.md)
+
     
 
 
-#### Training script for translation
-
-```
-python train_episodic.py --im_root /data/decathalon/Task03_Liver/latest_update_october/imagesTr_resampled_pad_crop_new/  
---train_json_list ../data/liver_optimize_sdf/ --val_json_list ../data/liver_optimize_sdf/ --yaml_file config_predict_48.yml 
---embed_model_path /data/nas/Projects/StasticalShapeModel/ShapeEmbed/ckpts/Liver0.2_jitter/last_checkpoint.ckpt 
---mean_sdf_file /data/decathalon/Task03_Liver/latest_update_october/mean_centred_sdf.nii.gz --embed_yaml_file config.yml --save_path /data/results/liver/optimize
-_through_sdf/resize_4_4_4/episodic_training_step_15_trans --sdf_sample_root /data/decathalon/Task03_Liver/latest_update_october/labelsTr_crop_samples/
-```
-
-
-Necessary files for training translation:
-
-1. Deep SDF trained model -> You can use the `SDF_PREDICT.md` from pre-requisties to train the SDF model of liver.
-2. Mean centred sdf file which used for translation.
-3. SDF samples points
-4. json list with the distance from mean centred liver to the ground truth liver
 
 
 ### Training script for scale

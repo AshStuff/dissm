@@ -95,22 +95,22 @@ Here `example_CT` can be any resampled and padded CT, which will allow the funct
 
 
 Currently only translation has been well-tested. The basic idea is this: 
-1. We ask the encoder to predict a translation of the sampled GT SDF **pixel** coordinates to center them. Then a scaling is applied (`1/63.7`) to transform them to the **canonical** shape embedding space (`[-1, 1]`)
-2. An extra channel is concatenated to the image, representing the initial guess. This is the mean SDF volume (perhaps a mask would work better, I'm not sure)
+1. We ask the encoder to predict a translation of the sampled GT SDF **pixel** coordinates to center them. Then an affine transform is applied to transform them to the **canonical** shape embedding space (`[-1, 1]`)
+2. An extra channel is concatenated to the image, representing the initial guess. This is the mean SDF volume 
 2. We use the mean embedding in the shape decoder, and minimize the divergence between the shape decoder SDF output and the GT SDF values
-3. Unfortunately, direct comparisons between the embedding SDF values and the GT SDFs **may** not be not compatible. It seems ok for prediction translation, but for predicting scale it is problematic. We can apply a mask-based loss, but this seems to have its own issues. This is a problem we must solve. For now the SDF distance loss is used. 
+
 ### Augmentations
 
 Several augmentations are applied
 1. In addition to intensity based augmentations, a random affine transform is also applied to the **image only** before being concatenated to the initial guess mean SDF channel. Note, any affine transformation of the image must be accounted for the in coordinate values of the GT SDF samples in the .npz files. An additional transform ensures that this is done (`ApplyAffineToPoints`)
 2. In addition to augmenting the image, the initial guess should also be randomized, so the network can learn how to refine different initial guesses of the same image. The `AddMaskChannel` takes care of this. It accepts a universal starting guess applied to all images and also an image-specific starting guess. In addition, it will optionally randomly jitter the initial guess. After computing an initial guess, it applies any corresponding transforms to the mean SDF channel being concatenating it to the image. Thus, changes in the initial state are represented by changes in the mean SDF channel. In addition, the initial guess is also applied to the GT SDF coordinates. Thus, any initial guesses are accounted for in both the mean SDF channel and in how the SDF coordinates are transformed. 
-3. In training, image-specific initial guesses are computed by taking a random position along the path from the global starting point and the GT translations computed via CDF. 
 
 ### Training
 
 To train run
 ```bash
-python predict_scale --im_root resample_padded_ct_folder --yaml_file config_predict_48.yml --save_path SAVE_PATH --json_list JSON_LIST_PATH --embed_model_path DEEPSDF_CKPT --embed_yaml_file config.yml --mean_sdf_file MEAN_SDF_NIFTY
+python train_episodic --im_root CT_FOLDER --sdf_sample_root SDF_NPZ_FOLDER --yaml_file configs/config_predict_48.yml --save_path SAVE_PATH --json_list JSON_LIST_PATH --embed_model_path DEEPSDF_CKPT --embed_yaml_file config.yml --mean_sdf_file MEAN_SDF_NIFTY --train_json_list TRAIN_JSON --val_json_list VAL_JSON --scale_factor SCALE_FACTOR
 ```
+where `CT_FOLDER` corresponds to the resmapled and padded CTs, `SDF_NPZ_FOLDER` corresponds to the sdf npz files extracted from the SDFs resampled to the same resolution as the CTs, and `SCALE_FACTOR` is the scale value in `scale.txt`.
 
 

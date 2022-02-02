@@ -1,4 +1,4 @@
-
+# good config if you have a 48GB GPU
 study:
   name: 'PredictParams'
 
@@ -14,7 +14,10 @@ solver:
   epochs: 2000
   num_workers: 12
   batch_size: 12
+  train_mini_steps_trans: 10
+  subsample: 15000
+  val_subsample: 150000
 model:
-
+  f_maps: 32
 
 

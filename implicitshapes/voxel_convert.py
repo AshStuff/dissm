@@ -514,14 +514,16 @@ def clean_path_end(path):
     return path
 
 
-def create_sample_jsonv2(ct_folder, sdf_folder, json_out_path, gt_scale_json_path=None):
+def create_sample_jsonv2(ct_folder, sdf_folder, embed_json, json_out_path, gt_scale_json_path=None):
     """
     Creates a training json from a set of SDF npz files and corresponding resampled and padded
     CTs. It will also add the GT translations, scales, and rotations calculated using CPD
+    Assumes ct_folder and sdf_folder describe two subfolders in the same folder
     """
-    # find all CTs
-    filelist = glob.glob(os.path.join(ct_folder, '*.nii.gz'))
-    filelist.sort()
+
+    with open(embed_json, 'r') as f:
+        embed_json = json.load(f)
+
     if gt_scale_json_path:
         # load the gt json
         with open(gt_scale_json_path, 'r') as f:
@@ -531,24 +533,26 @@ def create_sample_jsonv2(ct_folder, sdf_folder, json_out_path, gt_scale_json_pat
     else:
         gt_scale_json_dict = None
 
+
+
     json_list = []
 
-    for cur_file in tqdm(filelist):
+    for embed_dict in embed_json:
 
-        basename = os.path.basename(cur_file)
-        subfolder = os.path.basename(os.path.dirname(cur_file))
-        ct_path = os.path.join(subfolder, basename)
-        sdf_folder = clean_path_end(sdf_folder)
-
+        basename = embed_dict['path'][:-8]
+        ct_subfolder = os.path.basename(ct_folder)
         sdf_subfolder = os.path.basename(sdf_folder)
-        basename = basename[:-6] + 'npz'
-        sdf_path = os.path.join(sdf_subfolder, basename)
+
+        ct_path = os.path.join(ct_subfolder, basename + '.nii.gz')
+
+        sdf_path = os.path.join(sdf_subfolder, basename + '.npz')
         cur_dict = {
             'path': sdf_path,
             'im': ct_path
         }
+
         if gt_scale_json_dict: 
-            gt_dict = gt_scale_json_dict[basename]
+            gt_dict = gt_scale_json_dict[basename + '.nii.gz']
 
             for k, v in gt_dict.items():
                 if k != 'im':

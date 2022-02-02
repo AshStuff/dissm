@@ -1,10 +1,10 @@
 import numpy as np
 import torch
-from implicitshapes.dlt_utils import load_model_from_ckpt
+from dlt_utils import load_model_from_ckpt
 from torch import nn
 
-from deep_sdf_decoder import create_decoder_model
-from encoder import WrapperResidualEncoder
+from networks.deep_sdf_decoder import create_decoder_model
+from networks.encoder import WrapperResidualEncoder
 
 
 class Encoder(nn.Module):
@@ -101,7 +101,7 @@ class ConnectedModel(nn.Module):
 
     def __init__(self, num_outputs, embed_config, embed_model_path, cur_affine_key, Apx2sdf, centering_affine,
                  do_scale=False, gt_trans_key='t', do_rotate=False, do_pca=False, pca_components=None,
-                 num_pca_components=89, f_maps=32):
+                 num_pca_components=89, f_maps=32, debug=False):
 
         super().__init__()
         self.embed_config = embed_config
@@ -111,6 +111,7 @@ class ConnectedModel(nn.Module):
         self.do_rotate = do_rotate
         self.do_pca = do_pca
         self.gt_trans_key = gt_trans_key
+        self.debug = debug
         # self.encoder = Encoder(num_data)
         # self.scales = nn.Parameter(torch.Tensor((num_data,3)), requires_grad=True).cuda()
         # create the shape embedding model from the config and load the model weights
@@ -166,6 +167,8 @@ class ConnectedModel(nn.Module):
 
         # get the current point/latent-space vectors
         samples = data_dict['samples']
+        # suppress errors due to samples not having gradients
+        samples = samples + 0
         data_dict['sample_size'] = samples.shape[1]
         orig_sample_shape = samples.shape
 
@@ -204,68 +207,58 @@ class ConnectedModel(nn.Module):
 
         # get the current affine prediction, as embodied by the mask/sdf
         cur_affine = data_dict[self.cur_affine_key].float()
+        # get the current translation guess
+        trans = data_dict['theta'][:, :3]
+
+        # purely for debugging purposes get the current translation guess trans = data_dict['theta'][:,:3]
+        # update the current translation guess with the encoder's refinement
+        data_dict['cur_predict_trans'] = cur_affine[:, 3, :3] - trans
+        # set it to the default value if we are not predicting scale
+        scale = torch.ones_like(trans).cuda()
+
         # if we are predicting scale, then use it as a modification of a no scale transform
         if self.do_scale:
-
-            # get the current translation guess
-            trans = data_dict['theta'][:, :3]
-            # get the current translation guess trans = data_dict['theta'][:,:3]
-            # update the current translation guess with the encoder's refinement
-            data_dict['cur_predict_trans'] = cur_affine[:, 3, :3] - trans
+            
             # update the sampled coordinates with the current refinement
             # trans = trans.unsqueeze(1)
             scale = data_dict['theta'][:, 3:]
-
+            # we predict deviations from 1
             scale = scale + 1
-            # scale[:] = 1.0
-            # ******APH REMOVE***********
-            # scale[:] = 1
             data_dict['predict_scale'] = scale
-            scale = scale + 0
             scale[scale > 2] = 2
             scale[scale < 0.1] = 0.1
-        else:
 
-            # get the current translation guess
-            trans = data_dict['theta'][:, :3]
-            # update the current translation guess with the encoder's refinement
-            data_dict['cur_predict_trans'] = cur_affine[:, 3, :3] - trans
 
-            # update the sampled coordinates with the current refinement
-            # trans = trans.unsqueeze(1)
-            # get the current scale estimate
-            scale = data_dict['theta'][:, 3:]
-            # set it to the default value if we are not predicting scale
-            scale = torch.ones_like(scale).cuda()
+        self.debug = False
+        if self.debug:
+            trans[:] = 0
+
         data_dict['rotate'] = rotate
         data_dict['scale'] = scale
         data_dict['trans'] = trans
 
-        # just printing out some info
-        print('scale', scale)
-        # print('roate', rotate)
-        print('total_trans', data_dict['cur_predict_trans'][0, :])
+            
+            # if scale.device.index == 0:
+                # print(cur_affine[0,:,:])
 
-        # if scale.device.index == 0:
-        #     print('scale', scale[0, :])
-        #     print('scale:', 1 / scale[0, 0])
-        #     print('total_trans', data_dict['cur_predict_trans'][0, :])
-        #     print('tran', trans[0, :])
-        #     print('center_x:', gt_trans[0, 0] - 63.5, gt_trans[0, 0] - 63.5 + cur_affine[0, 3, 0])
-        #     print('center_y:', gt_trans[0, 1] - 63.5, gt_trans[0, 1] - 63.5 + cur_affine[0, 3, 1])
-        #     print('center_z:', gt_trans[0, 2] - 100.5, gt_trans[0, 2] - 100.5 + cur_affine[0, 3, 2])
+        # if self.debug:
+            # # just printing out some info
+            # print('scale', scale)
+            # print('total_trans', data_dict['cur_predict_trans'][0, :])
 
-        # alter the scale by the encoder's prediction
-        # points -= trans
-        # points *= scale
-        # scale[:] = 1
+            # if scale.device.index == 0:
+                # print('scale', scale[0, :])
+                # print('scale:', 1 / scale[0, 0])
+                # print('total_trans', data_dict['cur_predict_trans'][0, :])
+                # print('tran', trans[0, :])
+                # print('center_x:', gt_trans[0, 0])
+                # print('center_y:', gt_trans[0, 1])
+                # print('center_z:', gt_trans[0, 2])
+
         # for each image transform the points by the current affine prediction
         # if C is centering affine; T is encoder prediction, and M is the current guess
         # in ROW VECTOR convention, this is the what is being computed
         # p = i * C * T * M * inv(C) * Apx2sdf
-        # import pdb;pdb.set_trace()
-        # for i in range(batch_size):
-
         for i in range(batch_size):
             # get the current image's points
             cur_points = points[i, :, :]
@@ -284,29 +277,25 @@ class ConnectedModel(nn.Module):
             # prediction_matrix = construct_affine_matrix(data_dict)
             #
             # cur_points[:, :3] = cur_points[:, :3] @ prediction_matrix
-            points_ = cur_points[:, :3].clone()
-            cur_points[:, :3] = points_ @ rotate[i].T
+
+            cur_points[:, :3] = cur_points[:,:3] @ rotate[i].T
             cur_points[:, :3] *= scale[i, :]
             cur_points[:, :3] -= trans[i, :]
 
             # transform into canonical space
             cur_points = torch.matmul(cur_points, A)
             # make them inhomogenous
+
             points[i, :, :] = cur_points[:, :3]
 
         # update batch_dict sample by the updated points
         samples[:, :, -3:] = points
-        # samples[:, :, 0] *= 100
-        # adjust SDF values to overcome bias and scale
-        # if self.do_scale:
-        # samples[:,:,0] *= self.alpha
-        # samples[:,:,0] += self.beta
 
         samples = samples.reshape(orig_sample_shape)
         data_dict['samples_latent_vec'] = samples[:, :-3]
         del data_dict['sample_size']
         data_dict['samples'] = samples
-        # print([(k,i) for k,i in data_dict.items()])
+
         # now extract the sdf values based on the given points and latent vector pairs
         data_dict = self.decoder(data_dict)
         return data_dict
