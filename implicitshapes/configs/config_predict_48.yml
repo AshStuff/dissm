@@ -1,6 +1,6 @@
 # good config if you have a 48GB GPU
 study:
-  name: 'PredictParams'
+  name: 'PredictParamsResume'
 
 
 data:
@@ -9,12 +9,14 @@ data:
 
 solver:
   code_reg_lambda: 0.0001
-  lr: 0.00001
+  lr: 0.000011
   weight_decay: 0.0001
   epochs: 2000
   num_workers: 12
   batch_size: 12
   train_mini_steps_trans: 10
+  train_mini_steps_scale: 10
+
   subsample: 15000
   val_subsample: 150000
 model:

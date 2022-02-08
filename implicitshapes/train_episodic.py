@@ -80,8 +80,8 @@ def combined_loss(data_dict, l1_loss):
         scale = data_dict['predict_scale']
         # penalize any scale values > 3
         scale_select = scale.flatten()
-        scale_select = scale_select[scale_select > 2]
-        scale_select = scale_select - 2
+        scale_select = scale_select[scale_select > 1.1]
+        scale_select = scale_select - 1.1
         scale_select = torch.sum(scale_select)
         # print('scale_select', scale_select)
         if scale_select.nelement() != 0:
@@ -89,21 +89,22 @@ def combined_loss(data_dict, l1_loss):
 
         # penalized any scale values < 0.1
         scale_select_2 = scale.flatten()
-        scale_select_2 = scale_select_2[scale_select_2 < 0.1]
+        scale_select_2 = scale_select_2[scale_select_2 < 0.9]
         if scale_select_2.nelement() != 0:
-            scale_select_2 = 0.1 - scale_select_2
+            scale_select_2 = 0.9 - scale_select_2
             loss += torch.sum(scale_select_2)
         # print('scale_select_2', scale_select_2)
     return loss
 
 
-def construct_refine_mtx(data_dict, init_mtx, aug_affine_mtx, cur_iter):
+def construct_refine_mtx(data_dict, init_mtx, aug_affine_mtx, cur_iter, do_scale=False):
     """
     given the current refinement which should be stored in data_dict
     and the current state which should be stored in data_dict, this will
     update the current state
     """
     affine_mtxs = []
+    # fetch the current refinement
     rotate = data_dict['rotate'].detach().cpu().numpy()
     scale = data_dict['scale'].detach().cpu().numpy()
     trans = data_dict['trans'].detach().cpu().numpy()
@@ -112,9 +113,10 @@ def construct_refine_mtx(data_dict, init_mtx, aug_affine_mtx, cur_iter):
         import pdb;
         pdb.set_trace()
     batch_size = scale.shape[0]
-    # print('predict trans', trans)
 
+     
     for i in range(batch_size):
+        # construct an affine from the current refinement
         cur_refine_aff = np.eye(4)
         cur_refine_aff[:3, :3] = cur_refine_aff[:3, :3] @ rotate[i]
         cur_refine_aff[0, :] *= scale[i, 0]
@@ -123,20 +125,32 @@ def construct_refine_mtx(data_dict, init_mtx, aug_affine_mtx, cur_iter):
         cur_refine_aff[0, 3] = -trans[i, 0]
         cur_refine_aff[1, 3] = -trans[i, 1]
         cur_refine_aff[2, 3] = -trans[i, 2]
+        # invert the current guess to make it go from canonical to pixel
+        # and thus follow the conventions in the transforms
         init_mtx_inv = np.linalg.inv(init_mtx[i].T)
-        # print('refine_arr', cur_refine_aff)
-        
+       
+        # update the current guess with the refinement
         affine_mtx = np.linalg.solve(cur_refine_aff, init_mtx_inv)
+        # if i==0:
+            # import ipdb; ipdb.set_trace()
 
         # undo the geometric transform so we can start the next ministep fresh
         if aug_affine_mtx is not None:
             cur_aug_affine = aug_affine_mtx[i]
             affine_mtx = cur_aug_affine @ affine_mtx 
-        # print('Iter: {}'.format(iter), affine_mtx)
 
         if i == 0:
             gt_trans = [data_dict['t'][0][0].cpu().numpy(), data_dict['t'][1][0].cpu().numpy(), data_dict['t'][2][0].cpu().numpy()]
             print('Iter', cur_iter, 'Cur trans', affine_mtx[:3,3], 'gt_Trans', gt_trans)
+            if do_scale:
+                if data_dict['s'].dim() == 1:
+                    gt_scale = [data_dict['s'][0].cpu().numpy(), data_dict['s'][0].cpu().numpy(), data_dict['s'][0].cpu().numpy()]
+
+                else:
+                    gt_scale = [data_dict['s'][0,0].cpu().numpy(), data_dict['s'][0,1].cpu().numpy(), data_dict['s'][0,2].cpu().numpy()]
+
+                print( 'Cur Scale', [affine_mtx[0,0], affine_mtx[1,1], affine_mtx[2,2]], 'gt_Scale', gt_scale)
+
         affine_mtxs.append(affine_mtx)
     return np.array(affine_mtxs)
 
@@ -158,23 +172,27 @@ def load_pretrained_weights(current_model_dict, preloaded_model_dict):
     return current_model_dict
 
 
-def train(model, episodic_loader, loader, optimizer, mean_latent_vec, embed_config, tfboard, epoch, save_path,
-          train_loss, sample_size, code_reg_lambda, mini_steps):
+def train(model, episodic_loader, loader, optimizer, mean_latent_vec, embed_config, tfboard, epoch, save_path, train_loss, sample_size, code_reg_lambda, mini_steps):
     model.train()
     avg_loss = []
     lr = optimizer.param_groups[0]['lr']
     length = len(loader)
+    # SDF decoder is not trained here
     model.module.decoder.eval()
+    # we choose specific samples
     for iter_idx, meta_data_dict in enumerate(loader):
-        print(save_path)
         sub_total_loss = 0
-        mini_step_size = 10
+        mini_step_size = mini_steps
+        # get the actual index in the dataset of the samples
         idx = meta_data_dict['idx']
+        # get any init guesses as to pose, if present
         init_mtx = meta_data_dict['init_mtx'].numpy()
-        affine_mtxs = ['none'] * len(idx)
+        # setup random augmentation matrices
+        aug_affine_mtxs = ['none'] * len(idx)
         ims = [None] * len(idx)
         gt_latent_vec_repeat = None
         latent_vecs = None
+        # iterate for a set number of mini steps for the chosen images
         for step in range(mini_steps):
             torch.cuda.empty_cache()
             if step == 0:
@@ -182,8 +200,10 @@ def train(model, episodic_loader, loader, optimizer, mean_latent_vec, embed_conf
             else:
                 is_step_0 = False
             optimizer.zero_grad()
-            batch_idx = [(i, j, is_step_0, im) for i, j, im in
-                         zip(idx, init_mtx, ims)]
+            # package the data needed for a batch in each mini_step
+            batch_idx = [(cur_idx, cur_init_mtx, is_step_0, affine_mtx, im) for cur_idx, cur_init_mtx, affine_mtx, im in
+                         zip(idx, init_mtx, aug_affine_mtxs, ims)]
+            # forward it through the data loader to conduct necessary transforms
             data_dict = episodic_loader.forward(batch_idx)
 
             if 'gt_latent_vec' in data_dict.keys():
@@ -192,23 +212,31 @@ def train(model, episodic_loader, loader, optimizer, mean_latent_vec, embed_conf
                     gt_latent_vec_repeat = gt_latent_vec.repeat(1, sample_size, 1).view(-1, 256)
                     gt_latent_vec_repeat = gt_latent_vec_repeat.cuda(non_blocking=True)
 
+            
             data_dict['im'] = data_dict['im'].cuda(non_blocking=True)
+            # setup the  sdf coordinates to have the latent vector concatentated on top
             prepare_batch(data_dict, mean_latent_vec, embed_config)
 
             if latent_vecs is not None:
                 data_dict['latent_vecs'] = latent_vecs.detach() + torch.normal(0, 0.001, size=latent_vecs.shape).cuda()
 
+            # push data through the model
             data_dict = model(data_dict)
 
             latent_vecs = data_dict['latent_vecs']  # update the latent vecs
+
+            # if it's the first ministep, then fetch the images for re-use later in the data loading/transforms
+            # for subsequent steps
             if step == 0:
-                ims = deepcopy(data_dict['orig_im'].cpu().numpy())
+                ims = data_dict['im'][:,0,:].unsqueeze(1)
 
+            # fetch the affine transform used to randomly augment the image for use in later steps of the data loading/transforms
+            if 'aug_affine_mtx' in data_dict:
+                aug_affine_mtxs = data_dict['aug_affine_mtx'].cpu().numpy()
+            else:
+                aug_affine_mtxs = ['none'] * len(idx)
 
-            try:
-                affine_mtxs = data_dict['aug_affine_mtx'].cpu().numpy()
-            except:
-                affine_mtxs = ['none'] * len(idx)
+            # compute loss
             loss = combined_loss(data_dict, train_loss)
 
             if 'gt_latent_vec' in data_dict.keys():
@@ -216,10 +244,13 @@ def train(model, episodic_loader, loader, optimizer, mean_latent_vec, embed_conf
                 loss += pca_loss
             loss.backward()
             optimizer.step()
+            print('Loss', loss.item())
             with torch.no_grad():
                 sub_total_loss += loss.item()
+                # update the current pose guess with the predicted refinement for use in subsequent ministeps
                 init_mtx = data_dict['cur_affine_mtx'].cpu().numpy()
-                init_mtx = construct_refine_mtx(data_dict, init_mtx, affine_mtxs, cur_iter=step)  # updated init matrix
+                init_mtx = construct_refine_mtx(data_dict, init_mtx, None, cur_iter=step, do_scale=model.module.do_scale)  # updated init matrix
+
 
         avg_loss.append(loss.item())
 
@@ -248,8 +279,8 @@ def val(model, episodic_loader, loader, mean_latent_vec, embed_config, tfboard, 
                     is_step_0 = True
                 else:
                     is_step_0 = False
-                batch_idx = [(i, j, is_step_0, im) for i, j, im in
-                             zip(idx, init_mtx, ims)]
+                batch_idx = [(i, j, is_step_0, affine_mtx, im) for i, j, affine_mtx, im in
+                             zip(idx, init_mtx, affine_mtxs, ims)]
                 data_dict = episodic_loader.forward(batch_idx)
                 prepare_batch(data_dict, mean_latent_vec, embed_config)
                 if latent_vecs is not None:
@@ -261,7 +292,7 @@ def val(model, episodic_loader, loader, mean_latent_vec, embed_config, tfboard, 
 
                 ims = data_dict['im'][:, 0].data.cpu().unsqueeze(1)
                 init_mtx = data_dict['cur_affine_mtx'].cpu().numpy()
-                init_mtx = construct_refine_mtx(data_dict, init_mtx, None, step)  # updated init matrix
+                init_mtx = construct_refine_mtx(data_dict, init_mtx, None, step, do_scale=model.module.do_scale)  # updated init matrix
                 loss = combined_loss(data_dict, val_loss)
                 sub_total_loss += loss.item()
             print('Epoch: {} Iter: {}/{}  Loss: {}'.format(epoch, iter_idx, length, loss.item()))
@@ -278,17 +309,13 @@ def main(args):
     # torch.autograd.set_detect_anomaly(True)
     # torch.multiprocessing.set_start_method('spawn')
     torch.manual_seed(0)
-    ###############################################################################################
-    ###### Step 0. Environment Setup
-    ###############################################################################################
 
-    # Step 0.1 Read Configuration Document
     config = read_yaml(args.yaml_file)
 
     lr = config.solver.lr
 
-    # here we only have two settings so far, translation and translation+scale
-    study_name = config.study.name
+    # set up study name depending ons ettings
+    study_name = config.study.name 
     if args.do_scale:
         study_name += '_scale'
     if args.do_rotate:
@@ -315,14 +342,11 @@ def main(args):
     # grab the config used for the shape embedding model
     embed_config = read_yaml(args.embed_yaml_file)
 
-    ###############################################################################################
-    ###### Step 1. Data Preparation
-    ###############################################################################################
     im_dir = args.im_root
     # load the json list
     with open(args.train_json_list, 'r') as f:
         train_json_list = json.load(f)
-    # train_json_list = [train_json_list[43]]
+    # train_json_list = train_json_list[:4]
     with open(args.val_json_list, 'r') as f:
         val_json_list = json.load(f)
    
@@ -330,6 +354,7 @@ def main(args):
     mean_ni = nib.load(args.mean_sdf_file)
     mean_np = mean_ni.get_fdata()
     mean_affine = mean_ni.affine
+    # get transform to center coordinates
     centering = -(np.asarray(mean_np.shape) - 1) / 2
 
     # create affine matrix to center pixel coordiantes (useful when conducting rigid transforms)
@@ -338,6 +363,7 @@ def main(args):
 
     scale = args.scale_factor
 
+    # set up the transform from pixel to canonical coordinates
     Apx2sdf = np.eye(4)
     Apx2sdf[0, 3] = -(mean_np.shape[0] - 1)/2
     Apx2sdf[1, 3] = -(mean_np.shape[1] - 1)/2
@@ -350,14 +376,15 @@ def main(args):
     gt_trans_key = 't'
     # global initialization will be the center of the image, so we don't pass anything for that
 
+    # set up the transforms based on the MSL schedule
     if not args.do_scale and not args.do_rotate and not args.do_pca:
         transforms = Transforms(mean_np, Apx2sdf, gt_trans_key=gt_trans_key, im_dir=im_dir)
 
         mini_steps = config.solver.train_mini_steps_trans
 
     elif args.do_scale and not args.do_rotate and not args.do_pca:
-        transforms = ScaleTransforms(mean_np, Apx2sdf, gt_trans_key=gt_trans_key, im_dir=im_dir,
-                                     global_init_mtx=cfg.global_init_mtx)
+
+        transforms = ScaleTransforms(mean_np, Apx2sdf, gt_trans_key=gt_trans_key, im_dir=im_dir, centering_affine=center_affine)
         mini_steps = config.solver.train_mini_steps_scale
 
 
@@ -381,7 +408,7 @@ def main(args):
     val_subsample = config.solver.val_subsample 
 
 
-
+    # create dataset to load image and SDF samples
     train_dataset = SDFSamplesEpisodic(train_json_list, subsample, args.im_root, args.sdf_sample_root,
                                        step_0_transform=train_step_0_transforms,
                                        step_others_transform=train_other_step_transforms,
@@ -391,28 +418,29 @@ def main(args):
                                      step_others_transform=transforms.val_other_steps_transforms,
                                      gt_trans_key=gt_trans_key, load_ram=False)
 
+    # create dummy dataset that simply dicates what images to load without actually doing it
     meta_train_dataset = MetaDataset(train_json_list, do_scale=args.do_scale, do_rotate=args.do_rotate,
                                      do_pca=args.do_pca,
                                      )
     meta_val_dataset = MetaDataset(val_json_list, do_scale=args.do_scale, do_rotate=args.do_rotate, do_pca=args.do_pca,
                                    )
 
-    episodic_train_dataloader = EpisodicDataloader(train_dataset)
-    episodic_val_dataloader = EpisodicDataloader(val_dataset)
+    episodic_train_dataloader = EpisodicDataloader(train_dataset, num_workers=0)
+    episodic_val_dataloader = EpisodicDataloader(val_dataset, num_workers=0)
 
     train_dataloader = torch.utils.data.DataLoader(
         meta_train_dataset,
         batch_size=config.solver.batch_size,
         shuffle=True,
         drop_last=True,
-        num_workers=config.solver.num_workers
+        num_workers=0
     )
 
     val_dataloader = torch.utils.data.DataLoader(
         meta_val_dataset,
         batch_size=config.solver.batch_size,
         shuffle=False,
-        num_workers=config.solver.num_workers
+        num_workers=0
     )
     pca_components = None
     if args.do_pca:
@@ -461,6 +489,13 @@ def main(args):
         updated_dict = load_pretrained_weights(cur_model_dict, loaded['state_dict'])
         cur_model_dict.update(updated_dict)
         context_model.load_state_dict(cur_model_dict)
+    elif args.checkpoint is not None:
+        loaded = torch.load(args.checkpoint)
+        cur_model_dict = context_model.state_dict()
+        updated_dict = load_pretrained_weights(cur_model_dict, loaded['state_dict'])
+        cur_model_dict.update(updated_dict)
+        context_model.load_state_dict(cur_model_dict)
+
 
     best_loss = np.Inf
     start_epoch = 1

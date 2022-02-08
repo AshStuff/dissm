@@ -103,19 +103,25 @@ def calculate_error(model_decoder_path, decoder_config, sdf_gt_file, trans, scal
         os.remove(path)
 
 
-def predict_params_channel(model_path, volume_file, mean_sdf):
-    model = WrapperResidualEncoder(num_outputs=6, in_channels=2, f_maps=32)
-    model.eval()
+def load_model(model_path):
 
     loaded = torch.load(model_path)
 
     model_weights = loaded['state_dict']
 
     model_dict = {k[15:]: v for k, v in model_weights.items() if 'encoder' in k}
+    num_outputs = model_dict['_model_classifier.weight'].shape[0]
+
+    model = WrapperResidualEncoder(num_outputs=num_outputs, in_channels=2, f_maps=32)
+    model.eval()
+
 
     model.load_state_dict(model_dict)
     model = model.cuda()
     model.eval()
+    return model
+
+def predict_params_channel(model, volume_file, mean_sdf):
 
     im = nib.load(volume_file)
 
@@ -142,6 +148,7 @@ def predict_sdf_steps(model_encoder_path, volume_file, mean_sdf_file,
     # init_affine = np.eye(4)
     # init_affine[:3,3] = gt_trans
 
+    model = load_model(model_encoder_path)
     if init_affine is None:
         init_affine = np.eye(4)
 
@@ -156,7 +163,7 @@ def predict_sdf_steps(model_encoder_path, volume_file, mean_sdf_file,
         new_mean_np = affine_trans(np.expand_dims(mean_sdf, 0))
         new_mean_np = new_mean_np[0, :]
 
-        data_dict = predict_params_channel(model_encoder_path, volume_file, new_mean_np)
+        data_dict = predict_params_channel(model, volume_file, new_mean_np)
         theta = data_dict['theta'][0, :].detach().cpu().numpy()
         cur_refine_aff = np.eye(4)
 
@@ -172,32 +179,65 @@ def predict_sdf_steps(model_encoder_path, volume_file, mean_sdf_file,
         print('cur_refine_aff', np.linalg.inv(cur_refine_aff))
         print('cur_aff', affine_mtx)
 
+
+    # get transform to center coordinates
+    centering = -(np.asarray(mean_sdf.shape) - 1) / 2
+
+    # create affine matrix to center pixel coordiantes, b/c world coordiante transform works on uncentered pixel coordinates
+    center_affine = np.eye(4)
+    center_affine[:3, 3] = centering
+
+    volume = nib.load(volume_file)
+    im_coord_aff = volume.affine
+    # make the wolrd coordinate transform operate on centered pixels to be compatible with how affines are used in the encoder
+    im_coord_aff = im_coord_aff @ np.linalg.inv(center_affine)
+   
+    # create a final affine matrix from the pose encoder in world coordinates
+    world_affine_matrix = im_coord_aff @ affine_mtx
+
     print('Final Affine', affine_mtx)
-    return affine_mtx
+    print('Final world affine', world_affine_matrix)
+    return affine_mtx, world_affine_matrix
+
+def create_post_training_affines(model_encoder_path, im_root, json_list_path, mean_sdf_file, output_json_path, steps=10, do_scale=False, do_rotate=False, do_pca=False):
 
 
-def render_sdf(model_encoder_path_trans, model_decoder_path, decoder_config, volume_file, mean_sdf_file, save_path,
-               init_affine=None, steps=5, model_encoder_path_scale=None, Apx2sdf=None):
-    if Apx2sdf is None:
-        Apx2sdf = np.eye(4)
-        Apx2sdf[0, 3] = -127.5
-        Apx2sdf[1, 3] = -127.5
-        Apx2sdf[2, 3] = -80.5
-        Apx2sdf[0, :] *= -1 / 63.5
-        Apx2sdf[1, :] *= -1 / 63.5
-        Apx2sdf[2, :] *= 1 / 63.5 * (5 / 2)
+    if not do_scale and not do_rotate and not do_pca:
+        key = 'post_translate'
+        world_key = 'post_translate_world'
 
-    trans_affine_mtx = predict_sdf_steps(model_encoder_path_trans, model_decoder_path, decoder_config, volume_file,
-                                         mean_sdf_file, init_affine, steps, do_scale=False, Apx2sdf=Apx2sdf)
+    output_json_list = []
+    with open(json_list_path, 'r') as f:
+        json_list = json.load(f)
+
+    for cur_dict in json_list:
+        im_path = os.path.join(im_root, cur_dict['im'])
+        final_aff, final_aff_world = predict_sdf_steps(model_encoder_path, im_path, mean_sdf_file, init_affine=None, steps=steps, do_scale=do_scale)
+        cur_dict[key] = final_aff.tolist()
+        cur_dict[world_key] = final_aff_world.tolist()
+
+        output_json_list.append(cur_dict)
+
+    with open(output_json_path, 'w') as f:
+        json.dump(output_json_list, f)
+
+def render_sdf(model_encoder_path_trans, model_decoder_path, decoder_config, volume_file, mean_sdf_file, save_path, scale,
+        init_affine=None, steps=5):
+
+    ref_im = sitk.ReadImage(volume_file)
+    sdf_size = ref_im.GetSize()
+    ref_spacing = ref_im.GetSpacing()
+
+    trans_affine_mtx, _ = predict_sdf_steps(model_encoder_path_trans, volume_file,
+                                         mean_sdf_file, init_affine, steps, do_scale=False)
     infer_affine_mtx = trans_affine_mtx
 
-    if model_encoder_path_scale:
-        scale_affine_mtx = predict_sdf_steps(model_encoder_path_scale, model_decoder_path, decoder_config, volume_file,
-                                             mean_sdf_file, trans_affine_mtx, steps=1, do_scale=True, Apx2sdf=Apx2sdf)
-        infer_affine_mtx = scale_affine_mtx
+    # if model_encoder_path_scale:
+        # scale_affine_mtx = predict_sdf_steps(model_encoder_path_scale, model_decoder_path, decoder_config, volume_file,
+                                             # mean_sdf_file, trans_affine_mtx, steps=1, do_scale=True, Apx2sdf=Apx2sdf)
+        # infer_affine_mtx = scale_affine_mtx
 
-    infer_mean_aligned_sdf(model_decoder_path, decoder_config, save_path, volume_file, infer_affine_mtx, Apx2sdf)
-
+    infer_mean_aligned_sdf(model_decoder_path, decoder_config, save_path, volume_file, scale, infer_affine_mtx )
 
 def create_trans_json(source_json, model_encoder_path, model_decoder_path, decoder_config, volume_root, mean_sdf_file,
                       save_path, init_affine=None, steps=5, Apx2sdf=None):

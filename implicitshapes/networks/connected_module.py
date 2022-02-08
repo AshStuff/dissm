@@ -101,7 +101,7 @@ class ConnectedModel(nn.Module):
 
     def __init__(self, num_outputs, embed_config, embed_model_path, cur_affine_key, Apx2sdf, centering_affine,
                  do_scale=False, gt_trans_key='t', do_rotate=False, do_pca=False, pca_components=None,
-                 num_pca_components=89, f_maps=32, debug=False):
+                 num_pca_components=89, f_maps=32, debug=False, scale_lbound=0.9, scale_ubound=1.1):
 
         super().__init__()
         self.embed_config = embed_config
@@ -112,6 +112,8 @@ class ConnectedModel(nn.Module):
         self.do_pca = do_pca
         self.gt_trans_key = gt_trans_key
         self.debug = debug
+        self.scale_lbound = scale_lbound
+        self.scale_ubound = scale_ubound
         # self.encoder = Encoder(num_data)
         # self.scales = nn.Parameter(torch.Tensor((num_data,3)), requires_grad=True).cuda()
         # create the shape embedding model from the config and load the model weights
@@ -169,7 +171,6 @@ class ConnectedModel(nn.Module):
         samples = data_dict['samples']
         # suppress errors due to samples not having gradients
         samples = samples + 0
-        data_dict['sample_size'] = samples.shape[1]
         orig_sample_shape = samples.shape
 
         batch_size = data_dict['theta'].shape[0]
@@ -210,9 +211,6 @@ class ConnectedModel(nn.Module):
         # get the current translation guess
         trans = data_dict['theta'][:, :3]
 
-        # purely for debugging purposes get the current translation guess trans = data_dict['theta'][:,:3]
-        # update the current translation guess with the encoder's refinement
-        data_dict['cur_predict_trans'] = cur_affine[:, 3, :3] - trans
         # set it to the default value if we are not predicting scale
         scale = torch.ones_like(trans).cuda()
 
@@ -221,12 +219,13 @@ class ConnectedModel(nn.Module):
             
             # update the sampled coordinates with the current refinement
             # trans = trans.unsqueeze(1)
-            scale = data_dict['theta'][:, 3:]
+            scale = data_dict['theta'][:, 3:6]
             # we predict deviations from 1
             scale = scale + 1
-            data_dict['predict_scale'] = scale
-            scale[scale > 2] = 2
-            scale[scale < 0.1] = 0.1
+            # store the unclipped scale prediction so we can penalize deviations from the margin
+            data_dict['predict_scale'] = scale + 0
+            scale[scale > self.scale_ubound] = self.scale_ubound
+            scale[scale < self.scale_lbound] = self.scale_lbound
 
 
         self.debug = False
@@ -238,8 +237,6 @@ class ConnectedModel(nn.Module):
         data_dict['trans'] = trans
 
             
-            # if scale.device.index == 0:
-                # print(cur_affine[0,:,:])
 
         # if self.debug:
             # # just printing out some info
@@ -293,7 +290,6 @@ class ConnectedModel(nn.Module):
 
         samples = samples.reshape(orig_sample_shape)
         data_dict['samples_latent_vec'] = samples[:, :-3]
-        del data_dict['sample_size']
         data_dict['samples'] = samples
 
         # now extract the sdf values based on the given points and latent vector pairs

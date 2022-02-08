@@ -113,4 +113,22 @@ python train_episodic --im_root CT_FOLDER --sdf_sample_root SDF_NPZ_FOLDER --yam
 ```
 where `CT_FOLDER` corresponds to the resmapled and padded CTs, `SDF_NPZ_FOLDER` corresponds to the sdf npz files extracted from the SDFs resampled to the same resolution as the CTs, and `SCALE_FACTOR` is the scale value in `scale.txt`.
 
+### Setting Up Next Steps:
+
+You can run the trained model on the training and validation set to obtain initial translation-only guesses. This will then be ingested in the scale+translation encoder. 
+```python
+predict_params.create_post_training_affines(model_encoder_path, im_root, json_list_path, mean_sdf_file, output_json_path, steps=10, do_scale=False, do_rotate=False, do_pca=False):
+
+```
+You can do this for the training and validation jsons, and the script will predict translation for each image and save the result in an output_json. Make sure to set the step number to an appropriate number for translation (when training this is set to 10 by default and you can use the same number in inference).
+
+
+### Generating SDFs and Masks:
+
+To generate an SDF volume in inference you can run:
+```python
+predict_params.render_sdf(model_encoder_path_trans, model_decoder_path, decoder_config, volume_file, mean_sdf_file, save_path, scale, steps=10)
+```
+
+You must provide it the pose encoder checkpoint for translation that you just trained, plus the path to the shap embedding decoder and its config, along with the CT volume file and the mean shape SDF that you used in trained. The scale factor must also be inputted. Note this will only rigidly translate the mean shape to its optimal location, so accuracy will probably not be very good. To obtain a mask you can threshold the SDF.
 

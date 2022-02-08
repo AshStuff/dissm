@@ -80,11 +80,13 @@ class ApplyAffineToPoints():
     affine_key: the key holding the affine matrix
     """
 
-    def __init__(self, sample_key='samples', im_key='im', affine_key='affine_matrix', init_key=None, gt_trans_key='t'):
+    def __init__(self, sample_key='samples', im_key='im', affine_key='affine_matrix', init_key=None, gt_trans_key='t', gt_scale_key='s', gt_rotate_key='R'):
         self.sample_key = sample_key
         self.affine_key = affine_key
         self.im_key = im_key
         self.gt_trans_key = gt_trans_key
+        self.gt_scale_key = gt_scale_key
+        self.gt_rotate_key = gt_rotate_key
         self.init_key = init_key
 
     def __call__(self, data_dict):
@@ -139,6 +141,13 @@ class ApplyAffineToPoints():
             gt_trans = gt_trans[:3]
 
             data_dict[self.gt_trans_key] = gt_trans.tolist()
+        if self.gt_scale_key is not None:
+            
+            gt_scale = data_dict[self.gt_scale_key]
+            gt_scale = [gt_scale/affine_mtx[0,0], gt_scale/affine_mtx[1,1],gt_scale/affine_mtx[2,2]]
+            data_dict[self.gt_scale_key] = np.asarray(gt_scale)
+
+
         samples[:, 1:] = torch.tensor(points)
 
         data_dict[self.sample_key] = samples
@@ -221,6 +230,7 @@ class AddMaskChannel():
                  global_init_mtx=None, affine_mtx_key=None,
                  init_affine_key=None, translate_range=None, scale_range=None, rotate_range=None, device=None):
         self.mean_np = torch.tensor(np.expand_dims(mean_np, 0)).float()
+        self.mean_np = self.mean_np.to(device=device)
         # self.mean_np[self.mean_np < 0] = 0
         # self.mean_np[self.mean_np > 0] = 1
         self.init_mtx = init_mtx
@@ -336,9 +346,9 @@ class MetaDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, item):
         affine_mtx = np.eye(4)
-        if self.do_scale:
-            trans = self.json_list[item]['predict_trans']  # as of now we use only initial trans
-            affine_mtx[:3, 3] = trans
+        # if self.do_scale:
+            # trans = self.json_list[item]['predict_trans']  # as of now we use only initial trans
+            # affine_mtx[:3, 3] = trans
         if self.do_rotate:
             scale = self.json_list[item]['predict_scale']
             affine_mtx[np.diag_indices(4)] = np.append(scale, 1.)
@@ -361,6 +371,13 @@ class CopyField():
 
     def __call__(self, data_dict):
         data_dict[self.dest_key] = deepcopy(data_dict[self.source_key])
+        return data_dict
+
+class ToNumpy():
+    def __init__(self, source_key):
+        self.source_key = source_key
+    def __call__(self, data_dict):
+        data_dict[self.source_key] = np.asarray(data_dict[self.source_key])
         return data_dict
 
 
@@ -469,6 +486,8 @@ class SDFSamplesEpisodic(torch.utils.data.Dataset):
             load_ram=False,
             transforms=None,
             gt_trans_key='t',
+            gt_scale_key='s',
+            gt_rotate_key='R',
             latent_vec_dict=None,
     ):
         self.sdf_sample_root = sdf_sample_root
@@ -477,6 +496,9 @@ class SDFSamplesEpisodic(torch.utils.data.Dataset):
         self.transforms = transforms
         self.json_list = json_list
         self.gt_trans_key = gt_trans_key
+        self.gt_scale_key = gt_scale_key
+        self.gt_rotate_key = gt_rotate_key
+
         self.latent_vec_dict = latent_vec_dict
         self.step_0_transform = step_0_transform
         self.step_others_transform = step_others_transform
@@ -511,30 +533,33 @@ class SDFSamplesEpisodic(torch.utils.data.Dataset):
         return len(self.json_list)
 
     def __getitem__(self, batch_idx):
-        idx, global_affine_mtx, is_step_0, image = batch_idx
+        idx, global_affine_mtx, is_step_0, aug_affine_mtx, image = batch_idx
         # get the filename from the current dict
 
         im = self.json_list[idx]['im']
         sdf_filename = self.json_list[idx]['path']
         sdf_filename = os.path.join(self.sdf_sample_root, sdf_filename)
         im_filename = os.path.join(self.im_root, im)
+        sample = {k:v for k,v in self.json_list[idx].items()}
 
         # load the points coordinates and sdf values
         if self.load_ram:
-            sample = unpack_sdf_samples_from_ram_new(self.loaded_data[idx], self.subsample)
+            temp = unpack_sdf_samples_from_ram_new(self.loaded_data[idx], self.subsample)
         else:
-            sample = unpack_sdf_samples(sdf_filename, self.subsample)
+            temp_sample = unpack_sdf_samples(sdf_filename, self.subsample)
+
+        for k,v in temp_sample.items():
+            sample[k] = v
         if self.latent_vec_dict is not None:
             sample['gt_latent_vec'] = np.array(self.latent_vec_dict[im]).astype(np.float32)
-        sample[self.gt_trans_key] = self.json_list[idx][self.gt_trans_key]
-        if image is None:
-            sample['im'] = self.json_list[idx]['im']
-        else:
+
+
+        if image is not None:
             sample['im'] = image
         sample['copy_path'] = im_filename
         sample['init_mtx'] = global_affine_mtx
         sample['is_step_0'] = is_step_0
-        # sample['affine_matrix'] = affine_mtx
+        sample['aug_affine_mtx'] = aug_affine_mtx
         if 'updated_bbox' in self.json_list[idx]:
             sample['bbox'] = np.array(self.json_list[idx]['updated_bbox'])
         # conduct any transforms, if specified
@@ -649,8 +674,9 @@ class SequentialSampler(Sampler):
 
 
 class EpisodicDataloader():
-    def __init__(self, dataset):
+    def __init__(self, dataset, num_workers):
         self.dataset = dataset
+        self.num_workers = num_workers
 
     def forward(self, idx):
         """
@@ -662,7 +688,7 @@ class EpisodicDataloader():
             sampler=SequentialSampler(idx),
             batch_size=len(idx),
             shuffle=False,
-            num_workers=0,
+            num_workers=self.num_workers,
             pin_memory=False
         )
         return next(iter(dataloader))

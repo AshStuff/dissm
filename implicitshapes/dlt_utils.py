@@ -234,6 +234,34 @@ class ExpandDims(BaseTransform):
 
         return data_dict
 
+
+
+class WorldToVoxelAffine(BaseTransform):
+
+    def __init__(self, fields, affine_field, centering_affine=None):
+
+        super().__init__(fields)
+
+        self.field = fields
+        self.centering_affine = centering_affine
+        self.affine_field = affine_field
+
+    def __call__(self, data_dict):
+        
+        for field in self.fields:
+            trans_affine = data_dict[self.affine_field]['affine']
+
+            cur_affine = np.asarray(data_dict[field])
+            # we assume the trans affine is from an image to encodes pixel 2 world, where we want the opposite
+            cur_affine = np.linalg.solve(trans_affine,  cur_affine)
+            # now center the transform back to follow the convention that we are operating on centered pixel coordinates
+            if self.centering_affine is not None:
+                cur_affine = self.centering_affine @ cur_affine 
+
+            data_dict[field] = cur_affine
+
+        return data_dict
+
 class NiBabelLoader(BaseTransform):
     """
     Loads an nibabel volume, given a set of fields given as paths
